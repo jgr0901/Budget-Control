@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Budget Control · Finanzas e Inversiones</title>
+<meta name="description" content="Control de finanzas personales para freelancers: cuentas, efectivo, inversiones GBM, impuestos y metas.">
+<meta name="theme-color" content="#00b87c">
+<link rel="icon" type="image/png" href="icon-64.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app-container" id="app"></div>
+<div class="toast-wrap" id="toastWrap" aria-live="polite"></div>
+
+<!-- Modal: Agregar / Editar Movimiento -->
+<div class="modal-overlay" id="txModal" onclick="closeModalOnBg(event, 'txModal')">
+  <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="txModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="txModalTitle">Agregar Movimiento</div>
+      <button class="modal-close" onclick="closeModal('txModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="txForm" onsubmit="handleSaveTx(event)">
+      <input type="hidden" id="txType" value="in">
+      <input type="hidden" id="txEditSrc" value="">
+      <input type="hidden" id="txEditId" value="">
+
+      <div class="form-group">
+        <label class="form-label" for="txCardSelect">Cuenta / Tarjeta</label>
+        <select id="txCardSelect" class="select-field"></select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="txAmount">Monto ($ MXN)</label>
+        <input type="number" id="txAmount" class="input-field" step="any" min="0.01" placeholder="Ej. 15000.00" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="txNote">Concepto / Cliente / Descripción</label>
+        <input type="text" id="txNote" class="input-field" placeholder="Ej. Pago Cliente, Renta, Suscripción Figma" required maxlength="120">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="txDate">Fecha</label>
+        <input type="date" id="txDate" class="input-field" required>
+      </div>
+
+      <div class="form-group">
+        <span class="form-label">Categoría</span>
+        <div class="category-chips" id="txCategoryChips" role="radiogroup" aria-label="Categoría"></div>
+        <input type="hidden" id="txCategory" value="Cliente Freelance">
+      </div>
+
+      <div class="form-group" id="txTaxGroup">
+        <label class="checkbox-row"><input type="checkbox" id="txTaxable"> <span id="txTaxLabel">Este ingreso causa impuestos</span></label>
+      </div>
+
+      <div class="form-group" id="txRecurGroup">
+        <label class="checkbox-row"><input type="checkbox" id="txRecurring"> <span>🔁 Repetir automáticamente cada mes</span></label>
+      </div>
+
+      <button type="submit" class="btn-submit" id="txSubmitBtn">Guardar Ingreso</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Transferencia entre cuentas -->
+<div class="modal-overlay" id="transferModal" onclick="closeModalOnBg(event, 'transferModal')">
+  <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="trModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="trModalTitle">🔄 Transferir entre Cuentas</div>
+      <button class="modal-close" onclick="closeModal('transferModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="transferForm" onsubmit="handleSaveTransfer(event)">
+      <input type="hidden" id="trEditId" value="">
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label" for="trFrom">Desde</label>
+          <select id="trFrom" class="select-field"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="trTo">Hacia</label>
+          <select id="trTo" class="select-field"></select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="trAmount">Monto ($ MXN)</label>
+        <input type="number" id="trAmount" class="input-field" step="any" min="0.01" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="trNote">Nota (opcional)</label>
+        <input type="text" id="trNote" class="input-field" placeholder="Ej. Retiro de cajero, Pago de tarjeta de crédito" maxlength="120">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="trDate">Fecha</label>
+        <input type="date" id="trDate" class="input-field" required>
+      </div>
+      <span class="form-hint" style="margin-bottom:6px;">Las transferencias mueven dinero entre tus cuentas: no cuentan como ingreso ni gasto.</span>
+      <button type="submit" class="btn-submit" id="trSubmitBtn">Confirmar Transferencia</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Agregar / Editar Tarjeta -->
+<div class="modal-overlay" id="cardModal" onclick="closeModalOnBg(event, 'cardModal')">
+  <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="cardModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="cardModalTitle">Nueva Tarjeta / Cuenta</div>
+      <button class="modal-close" onclick="closeModal('cardModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="cardForm" onsubmit="handleSaveCard(event)">
+      <input type="hidden" id="cardEditId" value="">
+
+      <div class="form-group">
+        <label class="form-label" for="cardNameInput">Nombre de la Tarjeta / Cuenta</label>
+        <input type="text" id="cardNameInput" class="input-field" placeholder="Ej. BBVA Débito, Nu Cuenta, AMEX" required maxlength="40">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="cardTypeInput">Tipo</label>
+        <select id="cardTypeInput" class="select-field" onchange="updateCardTypeFields()">
+          <option value="debit">🏦 Débito / Cuenta de ahorro</option>
+          <option value="credit">💳 Tarjeta de Crédito</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="cardInitialInput" id="cardInitialLabel">Saldo Inicial ($ MXN)</label>
+        <input type="number" id="cardInitialInput" class="input-field" step="any" min="0" placeholder="Ej. 25000.00" required>
+      </div>
+
+      <div id="creditFields" class="hidden">
+        <div class="form-group">
+          <label class="form-label" for="cardLimitInput">Límite de Crédito ($ MXN)</label>
+          <input type="number" id="cardLimitInput" class="input-field" step="any" min="0" placeholder="Ej. 50000">
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label" for="cardCutInput">Día de Corte</label>
+            <input type="number" id="cardCutInput" class="input-field" min="1" max="31" placeholder="Ej. 15">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="cardPayInput">Día Límite de Pago</label>
+            <input type="number" id="cardPayInput" class="input-field" min="1" max="31" placeholder="Ej. 5">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <span class="form-label">Color y Estilo de la Tarjeta</span>
+        <div class="color-picker-grid" id="cardColorPicker">
+          <button type="button" class="color-option-btn card-theme-emerald selected" data-color="emerald" onclick="selectCardColor('emerald', this)" aria-label="Verde"></button>
+          <button type="button" class="color-option-btn card-theme-blue" data-color="blue" onclick="selectCardColor('blue', this)" aria-label="Azul"></button>
+          <button type="button" class="color-option-btn card-theme-purple" data-color="purple" onclick="selectCardColor('purple', this)" aria-label="Morado"></button>
+          <button type="button" class="color-option-btn card-theme-rose" data-color="rose" onclick="selectCardColor('rose', this)" aria-label="Rosa"></button>
+          <button type="button" class="color-option-btn card-theme-dark" data-color="dark" onclick="selectCardColor('dark', this)" aria-label="Oscuro"></button>
+          <button type="button" class="color-option-btn card-theme-amber" data-color="amber" onclick="selectCardColor('amber', this)" aria-label="Ámbar"></button>
+          <button type="button" class="color-option-btn card-theme-cyan" data-color="cyan" onclick="selectCardColor('cyan', this)" aria-label="Cian"></button>
+        </div>
+        <input type="hidden" id="cardColorInput" value="emerald">
+      </div>
+
+      <button type="submit" class="btn-submit" id="cardSubmitBtn">Crear Tarjeta</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Agregar compra de acción / Editar compra -->
+<div class="modal-overlay" id="stockModal" onclick="closeModalOnBg(event, 'stockModal')">
+  <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="stockModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="stockModalTitle">Agregar Compra de Acción / ETF</div>
+      <button class="modal-close" onclick="closeModal('stockModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="stockForm" onsubmit="handleSaveStock(event)">
+      <input type="hidden" id="stockEditId" value="">
+      <input type="hidden" id="stockEditLot" value="">
+      <div class="form-group">
+        <label class="form-label" for="stockCurrency">Mercado y Moneda de Compra</label>
+        <select id="stockCurrency" class="select-field" onchange="updateStockModalLabel()">
+          <option value="USD">🇺🇸 Mercado EE.UU. (Comprado en USD)</option>
+          <option value="MXN">🇲🇽 Mercado Mexicano (BMV / Comprado en Pesos MXN)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="stockTicker">Ticker / Símbolo</label>
+        <input type="text" id="stockTicker" class="input-field" placeholder="Ej. AAPL, NVDA, VOO, CEMEX" required style="text-transform:uppercase;" maxlength="15">
+        <span class="form-hint">Si ya tienes este ticker, la compra se suma a tu posición y se recalcula el precio promedio.</span>
+      </div>
+
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label" for="stockShares">Títulos</label>
+          <input type="number" id="stockShares" class="input-field" step="any" min="0.000001" placeholder="Ej. 10" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="stockBuyPrice" id="stockBuyPriceLabel">Precio (USD)</label>
+          <input type="number" id="stockBuyPrice" class="input-field" step="any" min="0.0001" placeholder="Ej. 185.50" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="stockDate">Fecha de Compra</label>
+        <input type="date" id="stockDate" class="input-field" required>
+      </div>
+
+      <div class="form-group">
+        <label class="checkbox-row"><input type="checkbox" id="stockPayLiquid"> <span>Pagar con el saldo líquido de GBM</span></label>
+        <span class="form-hint">Descuenta el costo de la compra del efectivo disponible en tu cuenta GBM.</span>
+      </div>
+
+      <button type="submit" class="btn-submit" id="stockSubmitBtn">Guardar en Portafolio</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Vender acción -->
+<div class="modal-overlay" id="sellModal" onclick="closeModalOnBg(event, 'sellModal')">
+  <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="sellModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="sellModalTitle">Registrar Venta</div>
+      <button class="modal-close" onclick="closeModal('sellModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="sellForm" onsubmit="handleSaveSell(event)">
+      <input type="hidden" id="sellStockId" value="">
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label" for="sellShares">Títulos a Vender</label>
+          <input type="number" id="sellShares" class="input-field" step="any" min="0.000001" required>
+          <span class="form-hint" id="sellMaxHint"></span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sellPrice" id="sellPriceLabel">Precio de Venta</label>
+          <input type="number" id="sellPrice" class="input-field" step="any" min="0.0001" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="sellDate">Fecha</label>
+        <input type="date" id="sellDate" class="input-field" required>
+      </div>
+      <div class="form-group">
+        <label class="checkbox-row"><input type="checkbox" id="sellToLiquid" checked> <span>Depositar lo obtenido en el saldo líquido de GBM</span></label>
+      </div>
+      <button type="submit" class="btn-submit expense">Confirmar Venta</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Dividendo -->
+<div class="modal-overlay" id="dividendModal" onclick="closeModalOnBg(event, 'dividendModal')">
+  <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="divModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="divModalTitle">💰 Registrar Dividendo</div>
+      <button class="modal-close" onclick="closeModal('dividendModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="dividendForm" onsubmit="handleSaveDividend(event)">
+      <div class="form-group">
+        <label class="form-label" for="divStock">Acción / ETF</label>
+        <select id="divStock" class="select-field" onchange="updateDividendLabel()"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="divAmount" id="divAmountLabel">Monto Neto Recibido</label>
+        <input type="number" id="divAmount" class="input-field" step="any" min="0.01" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="divDate">Fecha</label>
+        <input type="date" id="divDate" class="input-field" required>
+      </div>
+      <span class="form-hint" style="margin-bottom:6px;">El dividendo se suma al saldo líquido de tu cuenta GBM.</span>
+      <button type="submit" class="btn-submit">Guardar Dividendo</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Capital GBM (Depositar / Retirar / Ajustar) -->
+<div class="modal-overlay" id="gbmCapitalModal" onclick="closeModalOnBg(event, 'gbmCapitalModal')">
+  <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="gbmCapitalModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="gbmCapitalModalTitle">Gestionar Capital GBM</div>
+      <button class="modal-close" onclick="closeModal('gbmCapitalModal')" aria-label="Cerrar">✕</button>
+    </div>
+
+    <div class="period-switcher" style="margin-bottom:16px;">
+      <button type="button" class="period-pill active" id="gbmCapTabDeposit" onclick="setGbmCapitalMode('deposit')">📥 Depositar</button>
+      <button type="button" class="period-pill" id="gbmCapTabWithdraw" onclick="setGbmCapitalMode('withdraw')">📤 Retirar</button>
+      <button type="button" class="period-pill" id="gbmCapTabSet" onclick="setGbmCapitalMode('set')">✏️ Ajustar Total</button>
+    </div>
+
+    <form id="gbmCapitalForm" onsubmit="handleSaveGbmCapital(event)">
+      <input type="hidden" id="gbmCapitalMode" value="deposit">
+
+      <div class="form-group" id="gbmCapSourceGroup">
+        <label class="form-label" for="gbmCapSource" id="gbmCapSourceLabel">¿De dónde sale el dinero?</label>
+        <select id="gbmCapSource" class="select-field"></select>
+        <span class="form-hint">Si eliges una cuenta, se registra como transferencia y el dinero queda como saldo líquido en GBM.</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="gbmCapitalAmount" id="gbmCapitalInputLabel">Monto a Depositar ($ MXN)</label>
+        <input type="number" id="gbmCapitalAmount" class="input-field" step="any" min="0.01" placeholder="Ej. 5000.00" required oninput="updateGbmCapitalPreview()">
+      </div>
+
+      <div class="category-chips" id="gbmPresetChips" style="margin-top:-6px; margin-bottom:16px;">
+        <button type="button" class="cat-chip" onclick="applyGbmCapitalPreset(1000)">+ $1,000</button>
+        <button type="button" class="cat-chip" onclick="applyGbmCapitalPreset(5000)">+ $5,000</button>
+        <button type="button" class="cat-chip" onclick="applyGbmCapitalPreset(10000)">+ $10,000</button>
+        <button type="button" class="cat-chip" onclick="applyGbmCapitalPreset(50000)">+ $50,000</button>
+      </div>
+
+      <div style="background:var(--surface-subtle); border:1px solid var(--card-border); border-radius:14px; padding:14px; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:13px;">
+          <span style="color:var(--text-muted);">Capital Actual Invertido:</span>
+          <span style="font-weight:800;" id="gbmCapPreviewCurrent">$0.00 MXN</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:13px;">
+          <span style="color:var(--text-muted);" id="gbmCapPreviewOpLabel">Aporte a Sumar:</span>
+          <span style="font-weight:800;" id="gbmCapPreviewChange">$0.00 MXN</span>
+        </div>
+        <div style="height:1px; background:var(--divider); margin:8px 0;"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-weight:800; font-size:14px; color:var(--text-main);">Nuevo Capital Invertido:</span>
+          <span style="font-weight:900; font-size:16px; color:var(--primary);" id="gbmCapPreviewResult">$0.00 MXN</span>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-submit" id="gbmCapitalSubmitBtn">Confirmar Depósito de Capital</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Efectivo (Agregar / Retirar / Ajustar) -->
+<div class="modal-overlay" id="cashModal" onclick="closeModalOnBg(event, 'cashModal')">
+  <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="cashModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="cashModalTitle">💵 Gestionar Dinero en Efectivo</div>
+      <button class="modal-close" onclick="closeModal('cashModal')" aria-label="Cerrar">✕</button>
+    </div>
+
+    <div class="period-switcher" style="margin-bottom:16px;">
+      <button type="button" class="period-pill active" id="cashTabIn" onclick="setCashMode('in')">＋ Agregar</button>
+      <button type="button" class="period-pill" id="cashTabOut" onclick="setCashMode('out')">− Gastar</button>
+      <button type="button" class="period-pill" id="cashTabSet" onclick="setCashMode('set')">✏️ Ajustar Total</button>
+    </div>
+
+    <form id="cashForm" onsubmit="handleSaveCash(event)">
+      <input type="hidden" id="cashMode" value="in">
+
+      <div class="form-group">
+        <label class="form-label" for="cashAmount" id="cashAmountLabel">Monto a Agregar ($ MXN)</label>
+        <input type="number" id="cashAmount" class="input-field" step="any" min="0" placeholder="Ej. 500.00" required oninput="updateCashPreview()">
+      </div>
+
+      <div class="category-chips" id="cashPresetChips" style="margin-top:-6px; margin-bottom:16px;">
+        <button type="button" class="cat-chip" onclick="applyCashPreset(100)">+ $100</button>
+        <button type="button" class="cat-chip" onclick="applyCashPreset(200)">+ $200</button>
+        <button type="button" class="cat-chip" onclick="applyCashPreset(500)">+ $500</button>
+        <button type="button" class="cat-chip" onclick="applyCashPreset(1000)">+ $1,000</button>
+        <button type="button" class="cat-chip" onclick="applyCashPreset(2000)">+ $2,000</button>
+      </div>
+
+      <div class="form-group" id="cashCatGroup">
+        <label class="form-label" for="cashCategory">Categoría</label>
+        <select id="cashCategory" class="select-field"></select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="cashNote">Concepto / Motivo</label>
+        <input type="text" id="cashNote" class="input-field" placeholder="Ej. Pago recibido en mano, Despensa" maxlength="120">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="cashDate">Fecha</label>
+        <input type="date" id="cashDate" class="input-field">
+      </div>
+
+      <div style="background:var(--surface-subtle); border:1px solid var(--card-border); border-radius:14px; padding:14px; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:13px;">
+          <span style="color:var(--text-muted);">Efectivo Actual en Mano:</span>
+          <span style="font-weight:800;" id="cashPreviewCurrent">$0.00 MXN</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:13px;">
+          <span style="color:var(--text-muted);" id="cashPreviewOpLabel">Monto a Sumar:</span>
+          <span style="font-weight:800;" id="cashPreviewChange">$0.00 MXN</span>
+        </div>
+        <div style="height:1px; background:var(--divider); margin:8px 0;"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-weight:800; font-size:14px; color:var(--text-main);">Nuevo Total en Efectivo:</span>
+          <span style="font-weight:900; font-size:16px; color:var(--primary);" id="cashPreviewResult">$0.00 MXN</span>
+        </div>
+      </div>
+      <div id="cashErrorMsg" class="lock-error-msg" style="margin-bottom:6px;"></div>
+
+      <button type="submit" class="btn-submit" id="cashSubmitBtn">Confirmar y Guardar</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Cuenta por cobrar (factura) -->
+<div class="modal-overlay" id="invoiceModal" onclick="closeModalOnBg(event, 'invoiceModal')">
+  <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="invModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="invModalTitle">🧾 Nueva Cuenta por Cobrar</div>
+      <button class="modal-close" onclick="closeModal('invoiceModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="invoiceForm" onsubmit="handleSaveInvoice(event)">
+      <input type="hidden" id="invEditId" value="">
+      <div class="form-group">
+        <label class="form-label" for="invClient">Cliente</label>
+        <input type="text" id="invClient" class="input-field" placeholder="Ej. Agencia XYZ" required maxlength="60">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="invConcept">Concepto / Folio</label>
+        <input type="text" id="invConcept" class="input-field" placeholder="Ej. Factura A-102 · Diseño de landing" maxlength="120">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="invAmount">Monto a Cobrar ($ MXN)</label>
+        <input type="number" id="invAmount" class="input-field" step="any" min="0.01" required>
+      </div>
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label" for="invIssued">Fecha de Emisión</label>
+          <input type="date" id="invIssued" class="input-field" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="invDue">Fecha de Vencimiento</label>
+          <input type="date" id="invDue" class="input-field" required>
+        </div>
+      </div>
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label" for="invAccount">Se depositará en</label>
+          <select id="invAccount" class="select-field"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="invCategory">Categoría</label>
+          <select id="invCategory" class="select-field"></select>
+        </div>
+      </div>
+      <button type="submit" class="btn-submit">Guardar Cuenta por Cobrar</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Movimiento recurrente -->
+<div class="modal-overlay" id="recurringModal" onclick="closeModalOnBg(event, 'recurringModal')">
+  <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="recModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="recModalTitle">🔁 Movimiento Recurrente</div>
+      <button class="modal-close" onclick="closeModal('recurringModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="recurringForm" onsubmit="handleSaveRecurring(event)">
+      <input type="hidden" id="recEditId" value="">
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label" for="recType">Tipo</label>
+          <select id="recType" class="select-field" onchange="fillRecCategories()">
+            <option value="out">− Gasto</option>
+            <option value="in">＋ Ingreso</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="recFreq">Frecuencia</label>
+          <select id="recFreq" class="select-field">
+            <option value="monthly">Mensual</option>
+            <option value="biweekly">Quincenal (cada 14 días)</option>
+            <option value="weekly">Semanal</option>
+            <option value="yearly">Anual</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="recNote">Concepto</label>
+        <input type="text" id="recNote" class="input-field" placeholder="Ej. Netflix, Renta, Iguala Cliente ABC" required maxlength="120">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="recAmount">Monto ($ MXN)</label>
+        <input type="number" id="recAmount" class="input-field" step="any" min="0.01" required>
+      </div>
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label" for="recAccount">Cuenta</label>
+          <select id="recAccount" class="select-field"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="recCategory">Categoría</label>
+          <select id="recCategory" class="select-field"></select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="recNext">Próxima Fecha</label>
+        <input type="date" id="recNext" class="input-field" required>
+        <span class="form-hint">Cuando llegue la fecha, el movimiento se registra solo al abrir la app.</span>
+      </div>
+      <button type="submit" class="btn-submit">Guardar Recurrente</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Meta de ahorro -->
+<div class="modal-overlay" id="goalModal" onclick="closeModalOnBg(event, 'goalModal')">
+  <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="goalModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="goalModalTitle">🎯 Nueva Meta de Ahorro</div>
+      <button class="modal-close" onclick="closeModal('goalModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="goalForm" onsubmit="handleSaveGoal(event)">
+      <input type="hidden" id="goalEditId" value="">
+      <div class="form-group">
+        <label class="form-label" for="goalName">Nombre de la Meta</label>
+        <input type="text" id="goalName" class="input-field" placeholder="Ej. Fondo de emergencia, Laptop nueva, Viaje" required maxlength="50">
+      </div>
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label" for="goalTarget">Monto Objetivo</label>
+          <input type="number" id="goalTarget" class="input-field" step="any" min="1" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="goalSaved">Ya Ahorrado</label>
+          <input type="number" id="goalSaved" class="input-field" step="any" min="0" value="0">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="goalDue">Fecha Objetivo (opcional)</label>
+        <input type="date" id="goalDue" class="input-field">
+      </div>
+      <button type="submit" class="btn-submit">Guardar Meta</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal genérico: un solo monto -->
+<div class="modal-overlay" id="valueModal" onclick="closeModalOnBg(event, 'valueModal')">
+  <div class="modal-content" style="max-width:420px;" role="dialog" aria-modal="true" aria-labelledby="valueModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="valueModalTitle">Monto</div>
+      <button class="modal-close" onclick="closeModal('valueModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="valueForm" onsubmit="handleValueModalSubmit(event)">
+      <div class="form-group">
+        <label class="form-label" for="valueInput" id="valueModalLabel">Monto ($ MXN)</label>
+        <input type="number" id="valueInput" class="input-field" step="any" required>
+        <span class="form-hint" id="valueModalHint"></span>
+      </div>
+      <button type="submit" class="btn-submit" id="valueModalBtn">Guardar</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Pista de Contraseña -->
+<div class="modal-overlay" id="hintModal" onclick="closeModalOnBg(event,'hintModal')">
+  <div class="modal-content" style="max-width:440px;" role="dialog" aria-modal="true" aria-labelledby="hintModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="hintModalTitle">💡 Pista de tu Contraseña</div>
+      <button class="modal-close" onclick="closeModal('hintModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <div style="text-align:center; padding:10px 0 16px;">
+      <div style="font-size:42px; margin-bottom:12px;">🗝️</div>
+      <div style="font-size:12.5px; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">Tu pista registrada:</div>
+      <div id="hintModalText" style="font-size:17px; font-weight:900; color:var(--text-main); background:var(--surface-subtle); border:1.5px solid var(--usd-border); border-radius:16px; padding:16px 20px; line-height:1.4; margin-bottom:16px;"></div>
+      <div style="background:var(--usd-bg); border:1px solid var(--usd-border); border-radius:14px; padding:12px 14px; text-align:left; font-size:12.5px; color:var(--text-muted); line-height:1.5; margin-bottom:18px;">
+        🔒 <b>Tus datos están cifrados con tu contraseña.</b> Por eso no se puede recuperar ni cambiar desde fuera de la app: sin la contraseña correcta nadie (ni tú) puede leer la información. Si la olvidas por completo, solo podrás empezar de cero o restaurar un respaldo JSON.
+      </div>
+      <button class="btn-submit" onclick="closeModal('hintModal')">Entendido, volver a intentar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Cambiar Contraseña & Pista -->
+<div class="modal-overlay" id="changePassModal" onclick="closeModalOnBg(event,'changePassModal')">
+  <div class="modal-content" style="max-width:460px;" role="dialog" aria-modal="true" aria-labelledby="cpModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="cpModalTitle">🔐 Cambiar Contraseña & Pista</div>
+      <button class="modal-close" onclick="closeModal('changePassModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="changePassForm" onsubmit="handleSaveNewPassword(event)">
+      <div class="form-group">
+        <label class="form-label" for="cpCurrentPass">Contraseña Actual</label>
+        <div class="password-input-wrap">
+          <input type="password" id="cpCurrentPass" class="input-field" placeholder="Ingresa tu contraseña actual" required autocomplete="current-password">
+          <button type="button" class="toggle-pass-btn" onclick="togglePassVisibility('cpCurrentPass', this)" aria-label="Ver u ocultar">👁️</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="cpNewPass">Nueva Contraseña</label>
+        <div class="password-input-wrap">
+          <input type="password" id="cpNewPass" class="input-field" placeholder="Mínimo 4 caracteres" required minlength="4" autocomplete="new-password">
+          <button type="button" class="toggle-pass-btn" onclick="togglePassVisibility('cpNewPass', this)" aria-label="Ver u ocultar">👁️</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="cpConfirmPass">Confirmar Nueva Contraseña</label>
+        <div class="password-input-wrap">
+          <input type="password" id="cpConfirmPass" class="input-field" placeholder="Repite la nueva contraseña" required minlength="4" autocomplete="new-password">
+          <button type="button" class="toggle-pass-btn" onclick="togglePassVisibility('cpConfirmPass', this)" aria-label="Ver u ocultar">👁️</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="cpHintInput">Pista para recordar tu contraseña</label>
+        <input type="text" id="cpHintInput" class="input-field" placeholder="Ej. Cumpleaños de mamá, primera mascota, etc." required maxlength="100">
+        <span class="form-hint">La pista NO se cifra (se muestra antes de iniciar sesión). No escribas la contraseña en ella.</span>
+      </div>
+      <div id="cpErrorMsg" class="lock-error-msg" style="margin-bottom:8px;"></div>
+      <button type="submit" class="btn-submit" id="cpSubmitBtn">Guardar Nueva Contraseña & Pista</button>
+    </form>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
