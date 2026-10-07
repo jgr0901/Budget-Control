@@ -1,19 +1,27 @@
 // Service worker: permite usar la app sin internet una vez instalada.
-const CACHE = 'budget-control-v2';
+const CACHE = 'budget-control-v3';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './cloud.js',
+  './cloud-config.js',
   './manifest.webmanifest',
   './logo.png',
   './icon-64.png',
   './icon-192.png',
   './icon-512.png'
 ];
+const SUPABASE_LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // Se guarda cada archivo por separado: si falta uno, los demás sí quedan disponibles sin internet.
+  event.waitUntil(
+    caches.open(CACHE)
+      .then(c => Promise.all(ASSETS.concat(SUPABASE_LIB).map(u => c.add(u).catch(() => null))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', event => {
@@ -24,19 +32,24 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Archivos propios: primero red (para recibir actualizaciones), si falla usa la copia guardada.
+// Archivos propios y la librería de Supabase: primero red (para recibir actualizaciones),
+// si no hay internet se usa la copia guardada. Las llamadas a Supabase y APIs van directo.
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return; // APIs externas (tipo de cambio, fuentes) van directo
+  const isOwn = url.origin === self.location.origin;
+  const isLib = url.href.startsWith('https://cdn.jsdelivr.net/npm/@supabase/supabase-js');
+  if (!isOwn && !isLib) return;
   event.respondWith(
     fetch(req)
       .then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(req, copy));
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put(req, copy));
+        }
         return res;
       })
-      .catch(() => caches.match(req).then(r => r || caches.match('./index.html')))
+      .catch(() => caches.match(req).then(r => r || (isOwn ? caches.match('./index.html') : undefined)))
   );
 });

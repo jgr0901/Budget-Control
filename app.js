@@ -73,6 +73,7 @@ function defaultState() {
 let S = defaultState();
 let session = emptySession();
 let isAuthenticated = false;
+let unlockedSnapshot = null;   // estado tal como se descifró (base para sincronizar)
 
 // Navegación / UI
 let currentTab = 'overview';   // overview | bank | cash | gbm | plan | data
@@ -248,6 +249,9 @@ function persist() {
   const json = JSON.stringify(S);
   const sess = Object.assign({}, session);
   if (!sess.key && !sess.plain) return saveChain;
+  // Datos de sincronización (versión en la nube, cambios pendientes de subir)
+  const cloudOn = typeof cloudActive === 'function' && cloudActive();
+  const meta = cloudOn ? cloudVaultMeta() : null;
   saveChain = saveChain.then(async () => {
     let vault;
     if (sess.plain) {
@@ -256,11 +260,13 @@ function persist() {
       const { iv, ct } = await encryptText(sess.key, json);
       vault = { v: 2, enc: true, salt: bufToB64(sess.salt), iter: sess.iter, iv, ct, hint: sess.hint };
     }
+    if (meta) Object.assign(vault, meta);
     localStorage.setItem(VAULT_KEY, JSON.stringify(vault));
   }).catch(err => {
     console.error('Save error:', err);
     toast('⚠️ No se pudieron guardar los cambios (¿almacenamiento lleno?)', 5000);
   });
+  if (cloudOn) cloudSchedule();
   return saveChain;
 }
 
@@ -575,7 +581,8 @@ function processRecurring() {
     if (!r.active || !r.next) return;
     let guard = 0;
     while (r.next <= t && guard < 400) {
-      addMovement({ k: r.k, a: r.a, n: r.n, d: r.next, c: r.c, acct: r.acct, rec: r.id, tax: r.k === 'in' ? defaultTaxFor(r.c) : 0 });
+      // id fijo por fecha: si dos dispositivos generan el mismo pago, no se duplica al sincronizar
+      addMovement({ id: `r_${r.id}_${r.next}`, k: r.k, a: r.a, n: r.n, d: r.next, c: r.c, acct: r.acct, rec: r.id, tax: r.k === 'in' ? defaultTaxFor(r.c) : 0 });
       r.next = advanceDate(r.next, r.freq, r.day);
       created++; guard++;
     }
@@ -836,6 +843,7 @@ function render() {
         </div>
       </div>
       <div class="header-actions">
+        ${typeof cloudHeaderBadge === 'function' ? cloudHeaderBadge() : ''}
         <button class="btn-icon" onclick="toggleTheme()" title="Modo claro / oscuro" aria-label="Cambiar tema">🌓</button>
         <button class="btn-icon" onclick="lockSession()" title="Bloquear" aria-label="Bloquear">🔒</button>
         <button class="btn-icon" onclick="openTxModal('in')" title="Agregar ingreso" aria-label="Agregar ingreso" style="color:var(--income); font-weight:800;">＋</button>
@@ -919,6 +927,8 @@ function renderLockScreen() {
         ${hasCrypto ? '🔐 Tus datos se guardan cifrados (AES-256) en este navegador.' : '⚠️ Este navegador no permite cifrado aquí; abre la app desde un archivo local o https.'}
         ${isMigration ? '<br>Al entrar, tus datos actuales se cifrarán automáticamente.' : ''}
       </div>
+
+      <div id="cloudLockSlot">${typeof cloudLockHtml === 'function' ? cloudLockHtml() : ''}</div>
 
       <div style="margin-top:14px; display:flex; justify-content:center;">
         <button class="btn-icon" onclick="toggleTheme()" title="Modo claro / oscuro" aria-label="Cambiar tema">🌓</button>
@@ -1838,6 +1848,8 @@ function renderData() {
         <label class="checkbox-row"><input type="checkbox" ${st.lockOnHide ? 'checked' : ''} onchange="updateSetting('lockOnHide', this.checked)"> Bloquear al cambiar de pestaña o minimizar</label>
       </div>
     </div>
+
+    ${typeof cloudSettingsHtml === 'function' ? cloudSettingsHtml() : ''}
 
     <div class="card">
       <div class="card-title-row"><div class="card-title">🏛️ Apartado de Impuestos</div></div>
@@ -2789,9 +2801,15 @@ async function handleAuth(e) {
   const pass = $('lockPassInput').value.trim();
   const err = $('lockErrorMsg');
   const btn = $('lockSubmitBtn');
+  const setLoading = on => { if (btn) { btn.disabled = on; if (on) btn.textContent = '⏳ Verificando…'; } };
+  unlockedSnapshot = null;
+  // Con sincronización activa: traer primero la versión más reciente de la nube
+  if (typeof cloudBeforeUnlock === 'function' && typeof Cloud !== 'undefined' && Cloud.user) {
+    setLoading(true);
+    await cloudBeforeUnlock();
+  }
   const vault = readVault();
   const legacy = readLegacy();
-  const setLoading = on => { if (btn) { btn.disabled = on; if (on) btn.textContent = '⏳ Verificando…'; } };
   const wrong = () => {
     setLoading(false);
     render();
@@ -2815,6 +2833,7 @@ async function handleAuth(e) {
         try { json = await decryptText(key, vault.iv, vault.ct); } catch (x) { return wrong(); }
         session = { key, salt, iter, hint: vault.hint || '', plain: false, pass: null };
         S = normalizeState(JSON.parse(json));
+        unlockedSnapshot = JSON.stringify(S);
       }
     } else if (legacy && legacy.pass) {
       // Migración del formato anterior (contraseña en texto plano)
@@ -2854,6 +2873,7 @@ function onUnlocked() {
   isAuthenticated = true;
   lastActivity = Date.now();
   reportMonth = thisMonth();
+  if (typeof cloudAfterUnlock === 'function') cloudAfterUnlock(unlockedSnapshot);
   const created = processRecurring();
   saveState();
   render();
@@ -2864,6 +2884,7 @@ function onUnlocked() {
 async function lockSession() {
   if (!isAuthenticated) return;
   await saveChain;
+  if (typeof cloudOnLock === 'function') cloudOnLock();
   S = defaultState();
   session = emptySession();
   isAuthenticated = false;
@@ -2926,6 +2947,7 @@ async function handleSaveNewPassword(e) {
   btn.disabled = true;
   btn.textContent = '⏳ Cifrando…';
   await saveChain;
+  if (typeof cloudRememberKey === 'function') cloudRememberKey();
   await createSession(np, hint);
   await persist();
   btn.disabled = false;
@@ -3013,6 +3035,7 @@ async function resetAllData() {
   if (!confirm('⚠️ ¿Seguro que deseas BORRAR TODOS los datos y la contraseña? Esta acción no se puede deshacer.')) return;
   if (!confirm('Última confirmación: ¿descargaste un respaldo? Presiona Aceptar para borrar todo.')) return;
   await saveChain;
+  if (typeof cloudBeforeReset === 'function') await cloudBeforeReset();
   try { localStorage.removeItem(VAULT_KEY); localStorage.removeItem(LEGACY_KEY); } catch (x) {}
   S = defaultState();
   session = emptySession();

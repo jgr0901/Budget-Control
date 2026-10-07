@@ -612,6 +612,39 @@
   </div>
 </div>
 
+<!-- Modal: Cuenta en la nube (Supabase) -->
+<div class="modal-overlay" id="cloudModal" onclick="closeModalOnBg(event,'cloudModal')">
+  <div class="modal-content" style="max-width:440px;" role="dialog" aria-modal="true" aria-labelledby="cloudModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="cloudModalTitle">☁️ Sincronizar Dispositivos</div>
+      <button class="modal-close" onclick="closeModal('cloudModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="cloudForm" onsubmit="event.preventDefault(); handleCloudAuth('login')">
+      <p style="font-size:13px; color:var(--text-muted); margin-bottom:14px;">
+        Usa <b>la misma cuenta</b> en tu celular y en tu computadora. Esta contraseña es solo para la nube;
+        tus datos siguen protegidos con la contraseña de la app.
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="cloudEmail">Correo</label>
+        <input type="email" id="cloudEmail" class="input-field" autocomplete="email" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="cloudPass">Contraseña de la nube</label>
+        <div class="password-input-wrap">
+          <input type="password" id="cloudPass" class="input-field" autocomplete="current-password" minlength="6" required>
+          <button type="button" class="toggle-pass-btn" onclick="togglePassVisibility('cloudPass', this)" aria-label="Ver u ocultar">👁️</button>
+        </div>
+      </div>
+      <div id="cloudMsg" class="lock-error-msg" role="alert" style="margin-bottom:8px;"></div>
+      <button type="submit" class="btn-submit" id="cloudLoginBtn" style="margin-top:0;">Iniciar sesión</button>
+      <button type="button" class="btn-secondary" id="cloudSignupBtn" style="margin-top:10px;" onclick="handleCloudAuth('signup')">Crear cuenta nueva</button>
+    </form>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="cloud-config.js"></script>
 <script src="app.js"></script>
+<script src="cloud.js"></script>
 </body>
 </html>
