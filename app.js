@@ -824,13 +824,14 @@ function render() {
     return;
   }
 
+  // [clave, ícono, nombre, nombre corto para la barra inferior del celular]
   const tabs = [
-    ['overview', '📊 Resumen'],
-    ['bank', '🏦 Banco & Tarjetas'],
-    ['cash', '💵 Efectivo'],
-    ['gbm', '📈 Inversiones GBM'],
-    ['plan', '🎯 Planeación'],
-    ['data', '⚙️ Ajustes & Datos']
+    ['overview', '📊', 'Resumen', 'Resumen'],
+    ['bank', '🏦', 'Banco & Tarjetas', 'Banco'],
+    ['cash', '💵', 'Efectivo', 'Efectivo'],
+    ['gbm', '📈', 'Inversiones GBM', 'GBM'],
+    ['plan', '🎯', 'Planeación', 'Plan'],
+    ['data', '⚙️', 'Ajustes & Datos', 'Ajustes']
   ];
 
   const headerHtml = `
@@ -851,7 +852,7 @@ function render() {
       </div>
     </header>
     <nav class="nav-tab-bar" aria-label="Secciones">
-      ${tabs.map(([k, l]) => `<button class="nav-tab-btn ${currentTab === k ? 'active' : ''}" onclick="setTab('${k}')" ${currentTab === k ? 'aria-current="page"' : ''}>${l}</button>`).join('')}
+      ${tabs.map(([k, ico, l, short]) => `<button class="nav-tab-btn ${currentTab === k ? 'active' : ''}" onclick="setTab('${k}')" aria-label="${l}" ${currentTab === k ? 'aria-current="page"' : ''}><span class="tab-ico">${ico}</span><span class="tab-lbl">${l}</span><span class="tab-short">${short}</span></button>`).join('')}
     </nav>`;
 
   let tabHtml = '';
@@ -1520,6 +1521,8 @@ function renderGbm() {
       </div>
     </div>
 
+    ${renderMarketCard()}
+
     <div class="exchange-rate-card">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <div style="font-size:14px; font-weight:800; color:var(--usd-color);">💱 Tipo de Cambio USD / MXN</div>
@@ -1582,6 +1585,8 @@ function stockCardHtml(s) {
   const realized = s.sales.reduce((a, x) => a + num(x.gain), 0);
   const closed = q <= 0;
   const open = !!expandedStocks[s.id];
+  const live = !closed ? livePrices[s.id] : null;
+  const link = stocksLink(s);
 
   return `
     <div class="stock-card ${isUsd ? 'usd-market' : 'mxn-market'} ${closed ? 'closed' : ''}">
@@ -1612,6 +1617,7 @@ function stockCardHtml(s) {
         </div>
         <div class="stock-stat-box">
           <label class="stock-stat-lbl" for="price_${s.id}">Precio hoy (${s.c})</label>
+          ${live ? `<span class="live-tag" title="${live.stale ? 'Último precio guardado' : 'Precio de Stocks App'}"><span class="live-dot"></span>${live.stale ? 'Guardado' : 'En vivo'}${live.pct != null ? ` · <b style="color:${live.pct >= 0 ? 'var(--income)' : 'var(--expense)'}">${fmtPct(live.pct)}</b> hoy` : ''}</span>` : ''}
           <div class="stock-price-input-wrap">
             <input id="price_${s.id}" type="number" step="any" min="0" value="${cur}" class="stock-price-input" onchange="updateStockPrice('${s.id}', this.value)">
           </div>
@@ -1622,6 +1628,7 @@ function stockCardHtml(s) {
         <button class="mini-btn" onclick="openStockModal('${s.c}', '${s.id}')">＋ Compra</button>
         ${!closed ? `<button class="mini-btn" onclick="openSellModal('${s.id}')">− Vender</button>` : ''}
         <button class="mini-btn" onclick="openDividendModal('${s.id}')">💰 Dividendo</button>
+        ${link ? `<a class="mini-btn" href="${esc(link)}" target="_blank" rel="noopener">🔎 Ver en Stocks App</a>` : ''}
         <button class="mini-btn" onclick="toggleStockHistory('${s.id}')">${open ? '▲ Ocultar historial' : '▼ Historial'}</button>
         <button class="mini-btn danger" onclick="deleteStock('${s.id}')">🗑️ Eliminar</button>
       </div>
@@ -1914,6 +1921,7 @@ function setTab(t) {
   if (t !== 'bank') selectedBankCardId = null;
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (t === 'gbm') maybeRefreshMarket();
 }
 function setPeriod(p) { currentPeriod = p; render(); }
 function setChartMode(m) { selectedChartMode = m; render(); }
@@ -2480,12 +2488,14 @@ function handleSaveStock(e) {
   closeModal('stockModal');
   render();
   toast('📈 Compra guardada');
+  maybeRefreshMarket();
 }
 function updateStockPrice(id, val) {
   const p = parseFloat(val);
   const s = S.stocks.find(x => x.id === id);
   if (!s || isNaN(p) || p < 0) return;
   s.p = p;
+  delete livePrices[id];   // ahora es un precio escrito a mano
   saveState();
   render();
 }
@@ -2537,6 +2547,7 @@ function handleSaveSell(e) {
   s.lots = remaining > 1e-9 ? [{ q: remaining, b: avg, d: firstDate, paid: round2(paidTotal * remaining / have) }] : [];
   s.sales.push({
     id: uid(), q, price, avg, d: $('sellDate').value || today(),
+    bd: firstDate,   // fecha de la primera compra (para comparar contra el mercado)
     mxn: round2(q * price * fxMult(s.c)),
     gain: (price - avg) * q,
     liquid: $('sellToLiquid').checked,
@@ -2552,7 +2563,7 @@ function deleteSale(stockId, saleId) {
   if (!s) return;
   const x = s.sales.find(v => v.id === saleId);
   if (!x || !confirm('¿Deshacer esta venta? Los títulos regresarán a tu posición.')) return;
-  s.lots.push({ q: x.q, b: x.avg, d: x.d, paid: num(x.paidRemoved) });
+  s.lots.push({ q: x.q, b: x.avg, d: x.bd || x.d, paid: num(x.paidRemoved) });
   s.sales = s.sales.filter(v => v.id !== saleId);
   saveState(); render();
 }
@@ -2629,6 +2640,210 @@ async function refreshFx(silent) {
     if (btn) { btn.disabled = false; btn.textContent = '🔄 Actualizar automático'; }
     if (!silent) toast('⚠️ No se pudo obtener el tipo de cambio. Revisa tu conexión.');
   }
+}
+
+// ==========================================
+// PRECIOS EN VIVO Y COMPARACIÓN CON EL MERCADO (desde Stocks App)
+// ==========================================
+// Stocks App expone /api/public/market con precios de Yahoo Finance (sin datos tuyos ni inicio de sesión).
+const BENCH_KEY = 'bc_bench_v1';      // caché diaria de los índices (datos públicos, no se cifran)
+const BENCH = {
+  USD: { sym: '^GSPC', name: 'S&P 500' },
+  MXN: { sym: '^MXX', name: 'IPC (BMV)' }
+};
+const MARKET_TTL = 5 * 60 * 1000;
+let market = { at: 0, busy: false, ok: null, missing: [], again: false };
+const livePrices = {};                // {stockId: {pct, stale}}
+let benchData = null;                 // {d, series: {símbolo: [{t, c}]}}
+let stocksBase = null;                // la dirección de Stocks App que respondió
+
+function stocksBaseUrls() {
+  const urls = [];
+  if (stocksBase) urls.push(stocksBase);
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) urls.push('http://localhost:3000');
+  const cfg = window.BC_STOCKS && window.BC_STOCKS.url;
+  if (cfg) urls.push(String(cfg).replace(/\/+$/, ''));
+  return [...new Set(urls)];
+}
+
+// GBM y Yahoo nombran distinto: WALMEX* (BMV) → WALMEX.MX · BRK.B → BRK-B
+function yahooSymbol(s) {
+  const t = String(s.t || '').trim().toUpperCase().replace(/\s+/g, '').replace(/\*+$/, '');
+  if (s.c === 'MXN') return t.includes('.') ? t : `${t}.MX`;
+  return /^[A-Z]+\.[A-Z]$/.test(t) ? t.replace('.', '-') : t;
+}
+function stocksLink(s) {
+  const base = stocksBaseUrls().slice(-1)[0];
+  return base ? `${base}/stock/${encodeURIComponent(yahooSymbol(s))}` : null;
+}
+
+async function marketFetch(query) {
+  let lastErr = null;
+  for (const base of stocksBaseUrls()) {
+    try {
+      const j = await fetchJson(`${base}/api/public/market?${query}`, 9000);
+      stocksBase = base;
+      return j;
+    } catch (e) { lastErr = e; }
+  }
+  stocksBase = null;
+  throw lastErr || new Error('Stocks App no está configurada');
+}
+
+function maybeRefreshMarket() {
+  // También consulta si hay una acción nueva que todavía no tiene precio en vivo.
+  const pending = S.stocks.some(s => stockQty(s) > 0 && !livePrices[s.id] && !market.missing.includes(s.t));
+  if (pending || Date.now() - market.at > MARKET_TTL) refreshMarket(true);
+}
+
+async function refreshMarket(silent) {
+  const open = S.stocks.filter(s => stockQty(s) > 0);
+  if (!stocksBaseUrls().length) return;
+  if (market.busy) { market.again = true; return; }   // se repite al terminar la consulta en curso
+  market.busy = true;
+  if (!silent && isAuthenticated) render();
+  let ok = false, missing = [], changed = 0;
+  try {
+    if (open.length) {
+      const syms = [...new Set(open.map(yahooSymbol))];
+      const j = await marketFetch('symbols=' + encodeURIComponent(syms.join(',')));
+      if (!j.quotes || !j.quotes.length) throw new Error('Stocks App no pudo leer precios');
+      const bySym = new Map(j.quotes.map(q => [String(q.symbol).toUpperCase(), q]));
+      if (!isAuthenticated) { market.busy = false; return; }
+      open.forEach(s => {
+        const q = bySym.get(yahooSymbol(s));
+        const p = q ? num(q.price) : 0;
+        // Si Yahoo da otra moneda, el ticker probablemente es otro: no se toca el precio.
+        if (!(p > 0) || (q.currency && String(q.currency).toUpperCase() !== s.c)) { missing.push(s.t); return; }
+        livePrices[s.id] = { pct: q.changePct == null ? null : num(q.changePct), stale: !!q.stale };
+        if (Math.abs(p - num(s.p)) > 1e-9) { s.p = p; changed++; }
+      });
+    }
+    ok = true;
+  } catch (e) { ok = false; }
+  if (ok) { try { await loadBench(); } catch (e) {} }
+  const again = market.again;
+  market = { at: Date.now(), busy: false, ok, missing };
+  if (!isAuthenticated) return;
+  if (again) { refreshMarket(silent); return; }
+  if (changed) saveState();
+  render();
+  if (!silent) {
+    if (!ok) toast('⚠️ No se pudo conectar con Stocks App. Puedes seguir escribiendo los precios a mano.', 4000);
+    else toast(missing.length ? `📡 Precios actualizados. Sin precio para: ${missing.join(', ')}` : '📡 Precios actualizados', 3500);
+  }
+}
+
+async function loadBench() {
+  if (benchData && benchData.d === today()) return benchData;
+  try {
+    const c = JSON.parse(localStorage.getItem(BENCH_KEY) || 'null');
+    if (c && c.d === today() && c.series) return (benchData = c);
+  } catch (e) {}
+  const j = await marketFetch('bench=' + encodeURIComponent(Object.values(BENCH).map(b => b.sym).join(',')));
+  const series = {};
+  Object.values(BENCH).forEach(b => {
+    const pts = (j.bench && j.bench[b.sym]) || [];
+    const clean = pts.filter(p => p && num(p.t) > 0 && num(p.c) > 0).map(p => ({ t: num(p.t), c: num(p.c) }));
+    if (clean.length > 1) series[b.sym] = clean;
+  });
+  if (!Object.keys(series).length) throw new Error('sin datos de índices');
+  benchData = { d: today(), series };
+  try { localStorage.setItem(BENCH_KEY, JSON.stringify(benchData)); } catch (e) {}
+  return benchData;
+}
+
+// Cierre del índice en una fecha (o el último antes). null si la fecha es anterior a los datos.
+function closeOn(pts, dateIso) {
+  const t = new Date(dateIso + 'T21:00:00Z').getTime();
+  if (!(t >= pts[0].t - 7 * 86400000)) return null;
+  let best = pts[0];
+  for (const p of pts) { if (p.t <= t) best = p; else break; }
+  return best.c;
+}
+
+// "Si hubieras puesto el mismo dinero en el índice, en las mismas fechas": cada compra compra
+// unidades del índice y cada venta las vende. Los dividendos no se cuentan en ninguno de los dos lados.
+function benchCompare(cur) {
+  const b = BENCH[cur];
+  const pts = benchData && benchData.series && benchData.series[b.sym];
+  if (!pts) return null;
+  const now = pts[pts.length - 1].c;
+  let bought = 0, proceeds = 0, units = 0, value = 0, flows = 0, approx = false;
+  const flow = (amount, d, sign) => {
+    let px = d ? closeOn(pts, d) : null;
+    if (!px) { px = pts[0].c; approx = true; }
+    units += sign * amount / px;
+    flows++;
+  };
+  S.stocks.filter(s => s.c === cur).forEach(s => {
+    const first = s.lots.map(l => l.d).filter(Boolean).sort()[0] || null;
+    s.lots.forEach(l => {
+      const amt = num(l.q) * num(l.b);
+      bought += amt;
+      flow(amt, l.d, 1);
+    });
+    s.sales.forEach(x => {
+      const cost = num(x.q) * num(x.avg);
+      const bd = x.bd || first || x.d;
+      if (!x.bd) approx = true;     // ventas registradas antes de guardar la fecha de compra
+      bought += cost;
+      flow(cost, bd, 1);
+      const pr = num(x.q) * num(x.price);
+      proceeds += pr;
+      flow(pr, x.d, -1);
+    });
+    value += stockQty(s) * num(s.p);
+  });
+  if (!flows || bought <= 0) return null;
+  const mine = value + proceeds - bought;
+  const bench = units * now + proceeds - bought;
+  return { cur, name: b.name, mine, bench, minePct: (mine / bought) * 100, benchPct: (bench / bought) * 100, beat: mine - bench, approx };
+}
+
+function agoText(ms) {
+  const m = Math.round((Date.now() - ms) / 60000);
+  if (m < 1) return 'hace un momento';
+  if (m < 60) return `hace ${m} min`;
+  const h = Math.round(m / 60);
+  return h < 24 ? `hace ${h} h` : `hace ${Math.round(h / 24)} d`;
+}
+
+function renderMarketCard() {
+  if (!S.stocks.length) return '';
+  const configured = stocksBaseUrls().length > 0;
+  let status;
+  if (!configured) status = 'Configura la dirección de Stocks App en <b>cloud-config.js</b> para traer precios en vivo.';
+  else if (market.busy) status = '⏳ Consultando precios…';
+  else if (market.ok === true) status = `<span class="live-dot"></span> Precios en vivo de Stocks App · ${agoText(market.at)}`;
+  else if (market.ok === false) status = '⚠️ No hay conexión con Stocks App: se usan los precios que escribiste.';
+  else status = 'Los precios se traen de Stocks App al abrir esta sección.';
+  const missing = market.ok && market.missing.length
+    ? `<div class="market-note">Sin precio para <b>${market.missing.map(esc).join(', ')}</b>: revisa que el ticker sea el de la bolsa (por ejemplo WALMEX para BMV o AAPL para EE.UU.). Mientras, puedes escribirlo a mano.</div>` : '';
+
+  const rows = ['USD', 'MXN'].map(benchCompare).filter(Boolean);
+  const label = { USD: '🇺🇸 Tus acciones de EE.UU.', MXN: '🇲🇽 Tus acciones mexicanas' };
+  const cmp = rows.length ? rows.map(r => `
+      <div class="bench-row ${r.beat >= 0 ? 'win' : 'lose'}">
+        <div class="bench-title">${label[r.cur]} vs ${r.name}</div>
+        <div class="bench-line">Tu resultado: <b style="color:${r.mine >= 0 ? 'var(--income)' : 'var(--expense)'}">${fmtCur(r.mine, r.cur)}</b> (${fmtPct(r.minePct)})</div>
+        <div class="bench-line">El mismo dinero en el ${r.name}, en las mismas fechas: <b style="color:${r.bench >= 0 ? 'var(--income)' : 'var(--expense)'}">${fmtCur(r.bench, r.cur)}</b> (${fmtPct(r.benchPct)})</div>
+        <div class="bench-verdict" style="color:${r.beat >= 0 ? 'var(--income)' : 'var(--expense)'}">${r.beat >= 0 ? `Le vas ganando al mercado por ${fmtCur(r.beat, r.cur)}.` : `El mercado te va ganando por ${fmtCur(-r.beat, r.cur)}.`}</div>
+        ${r.approx ? '<div class="market-note">Aproximado: algunas compras o ventas no tienen fecha exacta o son de hace más de 5 años.</div>' : ''}
+      </div>`).join('')
+    : `<div class="market-note">${market.ok ? 'Registra compras con fecha para comparar tu portafolio contra el S&amp;P 500 y el IPC.' : 'La comparación contra el S&amp;P 500 y el IPC aparece cuando hay conexión con Stocks App.'}</div>`;
+
+  return `
+    <div class="card">
+      <div class="card-title-row" style="flex-wrap:wrap; gap:8px;">
+        <div class="card-title">🏁 ¿Le ganas al mercado?</div>
+        ${configured ? `<button class="period-pill" onclick="refreshMarket(false)" ${market.busy ? 'disabled' : ''}>🔄 Actualizar precios</button>` : ''}
+      </div>
+      <div class="market-status">${status}</div>
+      ${missing}
+      ${cmp}
+      <div class="market-note">No incluye dividendos ni comisiones. Datos de Yahoo Finance; pueden tener retraso.</div>
+    </div>`;
 }
 
 // ==========================================
@@ -2879,6 +3094,7 @@ function onUnlocked() {
   render();
   if (created) toast(`🔁 Se registraron ${created} movimiento(s) recurrente(s)`, 4000);
   if (S.settings.autoFx && S.fxd !== today() && navigator.onLine !== false) refreshFx(true);
+  if (navigator.onLine !== false) maybeRefreshMarket();
 }
 
 async function lockSession() {
