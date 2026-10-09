@@ -1699,3 +1699,89 @@ button, input, select, textarea { font-family: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ========================================================
+   ADICIONES v3: precios en vivo (Stocks App) y barra inferior
+   ======================================================== */
+.tab-short { display: none; }
+.tab-ico { font-size: 14px; line-height: 1; }
+
+a.mini-btn { display: inline-block; text-decoration: none; }
+
+.live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--income);
+  margin-right: 5px;
+  vertical-align: middle;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--income) 25%, transparent);
+}
+.live-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  display: block;
+  margin: 2px 0 4px;
+}
+.market-status {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.market-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+.bench-row {
+  border: 1px solid var(--card-border);
+  border-left: 4px solid var(--income);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-top: 10px;
+  background: var(--surface-subtle);
+}
+.bench-row.lose { border-left-color: var(--expense); }
+.bench-title { font-weight: 800; font-size: 14px; margin-bottom: 4px; }
+.bench-line { font-size: 13px; margin-top: 2px; }
+.bench-verdict { font-size: 13.5px; font-weight: 800; margin-top: 6px; }
+
+/* Celular: pestañas abajo, al alcance del pulgar (como en Stocks App) */
+@media (max-width: 640px) {
+  .app-container { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+  .nav-tab-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 900;
+    margin: 0;
+    border-radius: 0;
+    border-width: 1px 0 0;
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom, 0px));
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 2px;
+    overflow: visible;
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+  }
+  .nav-tab-btn {
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 2px;
+    font-size: 10.5px;
+    border-radius: 10px;
+  }
+  .nav-tab-btn .tab-ico { font-size: 19px; }
+  .nav-tab-btn .tab-lbl { display: none; }
+  .nav-tab-btn .tab-short { display: block; }
+  .nav-tab-btn.active { box-shadow: none; }
+  .toast-wrap { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+}

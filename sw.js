@@ -1,5 +1,5 @@
 // Service worker: permite usar la app sin internet una vez instalada.
-const CACHE = 'budget-control-v3';
+const CACHE = 'budget-control-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -13,7 +13,7 @@ const ASSETS = [
   './icon-192.png',
   './icon-512.png'
 ];
-const SUPABASE_LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+const SUPABASE_LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js';
 
 self.addEventListener('install', event => {
   // Se guarda cada archivo por separado: si falta uno, los demás sí quedan disponibles sin internet.
