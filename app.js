@@ -9,6 +9,7 @@
 const LEGACY_KEY = 'fcf1';          // formato anterior (sin cifrar)
 const VAULT_KEY = 'bc_vault_v2';    // formato nuevo (cifrado)
 const THEME_KEY = 'theme_pref';
+const HIDE_KEY = 'bc_hide_amounts';  // modo privacidad: ocultar montos (preferencia de este dispositivo)
 const PBKDF2_ITER = 250000;
 
 // Categorías
@@ -114,7 +115,13 @@ function esc(str) {
 }
 const escapeHtml = esc;
 
+// Modo privacidad: cuando está activo, todos los montos se muestran como $••••
+let hideAmounts = false;
+try { hideAmounts = localStorage.getItem(HIDE_KEY) === '1'; } catch (e) {}
+const HIDDEN_AMOUNT = '••••';
+
 const fmtMxn = n => {
+  if (hideAmounts) return `$${HIDDEN_AMOUNT} MXN`;
   const v = num(n);
   const sign = v < 0 ? '-' : '';
   const val = Math.abs(v).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -122,6 +129,7 @@ const fmtMxn = n => {
 };
 const fmtShort = n => fmtMxn(n).replace(' MXN', '');
 const fmtUsd = n => {
+  if (hideAmounts) return `$${HIDDEN_AMOUNT} USD`;
   const v = num(n);
   const sign = v < 0 ? '-' : '';
   const val = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -178,6 +186,13 @@ function initTheme() {
   document.documentElement.setAttribute('data-theme', theme);
 }
 initTheme();
+
+function toggleAmounts() {
+  hideAmounts = !hideAmounts;
+  try { localStorage.setItem(HIDE_KEY, hideAmounts ? '1' : '0'); } catch (e) {}
+  render();
+  toast(hideAmounts ? '🙈 Montos ocultos' : '👁️ Montos visibles');
+}
 
 function toggleTheme() {
   const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
@@ -845,6 +860,7 @@ function render() {
       </div>
       <div class="header-actions">
         ${typeof cloudHeaderBadge === 'function' ? cloudHeaderBadge() : ''}
+        <button class="btn-icon" onclick="toggleAmounts()" title="${hideAmounts ? 'Mostrar montos' : 'Ocultar montos'}" aria-label="${hideAmounts ? 'Mostrar montos' : 'Ocultar montos'}" aria-pressed="${hideAmounts}">${hideAmounts ? '🙈' : '👁️'}</button>
         <button class="btn-icon" onclick="toggleTheme()" title="Modo claro / oscuro" aria-label="Cambiar tema">🌓</button>
         <button class="btn-icon" onclick="lockSession()" title="Bloquear" aria-label="Bloquear">🔒</button>
         <button class="btn-icon" onclick="openTxModal('in')" title="Agregar ingreso" aria-label="Agregar ingreso" style="color:var(--income); font-weight:800;">＋</button>
@@ -864,6 +880,7 @@ function render() {
   else if (currentTab === 'data') tabHtml = renderData();
 
   app.innerHTML = headerHtml + tabHtml;
+  if (!document.activeElement || document.activeElement === document.body) document.documentElement.classList.remove('kb-open');
 }
 
 // ---------- Pantalla de bloqueo ----------
@@ -3276,3 +3293,55 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 
 // Iniciar
 render();
+
+// ==========================================
+// iPhone: mantener la barra inferior pegada abajo
+// ==========================================
+// En Safari de iOS, después de escribir en un campo (al cerrarse el teclado) o al
+// volver a la app, la barra fija a veces se queda "flotando" a media pantalla.
+// Mientras el teclado está abierto la ocultamos, y al cerrarlo forzamos a iOS a
+// recalcular la posición de los elementos fijos.
+(function keepBottomBarFixed() {
+  const root = document.documentElement;
+  const isTextField = el => !!el && (
+    el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' ||
+    (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|reset|file|range|color|hidden)$/i.test(el.type))
+  );
+  const nudge = () => {
+    // Un scroll "en el mismo lugar" hace que iOS vuelva a acomodar lo que está fijo.
+    window.scrollTo(window.scrollX, window.scrollY);
+  };
+  let t = 0;
+  document.addEventListener('focusin', e => {
+    if (isTextField(e.target)) { clearTimeout(t); root.classList.add('kb-open'); }
+  });
+  document.addEventListener('focusout', () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      if (isTextField(document.activeElement)) return;
+      root.classList.remove('kb-open');
+      nudge();
+    }, 80);
+  });
+  // Si el campo desaparece (se cerró una ventana o se redibujó la pantalla) no siempre
+  // llega "focusout": revisamos de nuevo para nunca dejar la barra escondida.
+  const sync = () => {
+    if (root.classList.contains('kb-open') && !isTextField(document.activeElement)) {
+      root.classList.remove('kb-open');
+      nudge();
+    }
+  };
+  window.addEventListener('scroll', sync, { passive: true });
+  document.addEventListener('touchstart', () => setTimeout(sync, 0), { passive: true });
+  document.addEventListener('click', () => setTimeout(sync, 0));
+  if (window.visualViewport) {
+    let raf = 0;
+    window.visualViewport.addEventListener('resize', () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => { raf = 0; sync(); if (!root.classList.contains('kb-open')) nudge(); });
+    });
+  }
+  window.addEventListener('pageshow', nudge);
+  window.addEventListener('orientationchange', () => setTimeout(nudge, 300));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(nudge, 50); });
+})();
