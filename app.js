@@ -66,7 +66,8 @@ function defaultState() {
       taxRate: 30,
       autoLockMin: 5,
       lockOnHide: false,
-      autoFx: true
+      autoFx: true,
+      stocksKey: ''     // clave de Stocks App para mandarle las acciones de GBM
     }
   };
 }
@@ -617,6 +618,7 @@ function saveState() {
   else S.snaps.push({ d: t, t: tot });
   if (S.snaps.length > 1500) S.snaps = S.snaps.slice(-1500);
   persist();
+  stocksSyncSchedule();
 }
 
 function getReferenceSnapshot() {
@@ -1874,6 +1876,8 @@ function renderData() {
     </div>
 
     ${typeof cloudSettingsHtml === 'function' ? cloudSettingsHtml() : ''}
+
+    ${stocksSyncSettingsHtml()}
 
     <div class="card">
       <div class="card-title-row"><div class="card-title">🏛️ Apartado de Impuestos</div></div>
@@ -3345,3 +3349,107 @@ render();
   window.addEventListener('orientationchange', () => setTimeout(nudge, 300));
   document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(nudge, 50); });
 })();
+
+// ==========================================
+// ENVÍO AUTOMÁTICO DE ACCIONES A STOCKS APP
+// ==========================================
+// Con la clave de Stocks App (Configuración → Budget Control), cada cambio en GBM se manda solo:
+// las empresas entran a la lista y sus compras/ventas al Portafolio de Stocks App.
+const STOCKS_SYNC_KEY = 'bc_stocks_sync_v1';   // huella de lo último enviado (no contiene datos)
+const stocksSync = { timer: null, busy: false, again: false, status: '', at: 0 };
+
+function stocksSyncPayload() {
+  const bySym = new Map();
+  S.stocks.forEach(s => {
+    const sym = yahooSymbol(s);
+    if (!sym) return;
+    const ops = bySym.get(sym) || [];
+    // Al vender, Budget junta las compras en un solo lote: la compra de lo vendido se reconstruye con su costo promedio.
+    s.sales.forEach(x => {
+      ops.push({ kind: 'buy', shares: num(x.q), price: num(x.avg), date: x.bd || x.d });
+      ops.push({ kind: 'sell', shares: num(x.q), price: num(x.price), date: x.d });
+    });
+    s.lots.forEach(l => ops.push({ kind: 'buy', shares: num(l.q), price: num(l.b), date: l.d }));
+    bySym.set(sym, ops);
+  });
+  return { stocks: [...bySym].map(([symbol, ops]) => ({ symbol, ops })) };
+}
+function stocksSyncHash(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  return String(h >>> 0);
+}
+function stocksSyncKey() { return String((S.settings && S.settings.stocksKey) || '').trim(); }
+
+function stocksSyncSchedule(force) {
+  if (!isAuthenticated || !stocksSyncKey()) return;
+  clearTimeout(stocksSync.timer);
+  stocksSync.timer = setTimeout(() => stocksSyncNow(!!force), force ? 0 : 1500);
+}
+
+async function stocksSyncNow(force) {
+  const key = stocksSyncKey();
+  if (!isAuthenticated || !key) return;
+  if (stocksSync.busy) { stocksSync.again = true; return; }
+  const body = JSON.stringify(stocksSyncPayload());
+  const hash = stocksSyncHash(key + '|' + body);
+  let last = null;
+  try { last = localStorage.getItem(STOCKS_SYNC_KEY); } catch (e) {}
+  if (!force && last === hash) return;
+  if (navigator.onLine === false) { stocksSync.status = 'Sin internet · se envía al reconectar'; return; }
+
+  stocksSync.busy = true;
+  let msg = '';
+  let ok = false;
+  for (const base of stocksBaseUrls()) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const r = await fetch(`${base}/api/budget-sync`, {
+        method: 'POST', signal: ctrl.signal, cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+        body
+      }).finally(() => clearTimeout(t));
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok) { ok = true; msg = `Enviado · ${j.symbols} empresa(s)` + (j.watchlist_added ? `, ${j.watchlist_added} nueva(s) en tu lista` : ''); break; }
+      msg = j.error || ('Error ' + r.status);
+      if (r.status === 401 || r.status === 400) break;   // la clave o los datos están mal: no tiene caso probar otra dirección
+    } catch (e) { msg = 'No se pudo conectar con Stocks App'; }
+  }
+  stocksSync.busy = false;
+  stocksSync.at = Date.now();
+  stocksSync.status = (ok ? '✅ ' : '⚠️ ') + msg;
+  if (ok) { try { localStorage.setItem(STOCKS_SYNC_KEY, hash); } catch (e) {} }
+  if (force) toast(ok ? '📤 Acciones enviadas a Stocks App' : '⚠️ ' + msg, 3500);
+  const el = $('stocksSyncStatus');
+  if (el) el.textContent = stocksSync.status;
+  if (stocksSync.again) { stocksSync.again = false; stocksSyncSchedule(); }
+}
+
+function saveStocksKey() {
+  const v = ($('stocksKeyInput').value || '').trim();
+  if (v && !/^[a-f0-9]{32,128}$/i.test(v)) { toast('⚠️ Esa clave no parece válida. Cópiala de nuevo desde Stocks App.'); return; }
+  S.settings.stocksKey = v.toLowerCase();
+  saveState();
+  render();
+  if (v) stocksSyncSchedule(true);
+  else toast('Conexión con Stocks App desactivada');
+}
+
+function stocksSyncSettingsHtml() {
+  const key = stocksSyncKey();
+  return `
+    <div class="card">
+      <div class="card-title-row"><div class="card-title">🔗 Conexión con Stocks App</div></div>
+      <p style="font-size:13.5px; color:var(--text-muted); margin-bottom:12px;">Las acciones de GBM se mandan solas a Stocks App cada vez que agregas, compras, vendes o eliminas una: entran a tu lista y al Portafolio. Saca la clave en Stocks App → Configuración → Budget Control → <b>Copiar clave</b>.</p>
+      <label class="form-label" for="stocksKeyInput">Clave de Stocks App</label>
+      <input id="stocksKeyInput" type="password" class="input-field" autocomplete="off" spellcheck="false" placeholder="Pega aquí la clave" value="${esc(key)}">
+      <div class="stock-actions" style="margin-top:10px;">
+        <button class="mini-btn" onclick="saveStocksKey()">💾 Guardar</button>
+        ${key ? `<button class="mini-btn" onclick="stocksSyncSchedule(true)">📤 Enviar ahora</button>` : ''}
+      </div>
+      ${key ? `<span class="form-hint" id="stocksSyncStatus" style="margin-top:8px;">${esc(stocksSync.status || 'Conectado')}</span>` : ''}
+    </div>`;
+}
+
+window.addEventListener('online', () => stocksSyncSchedule());
