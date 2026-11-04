@@ -117,6 +117,7 @@ function cloudSettingsHtml() {
     </div>
     <div class="stock-actions">
       <button class="mini-btn" onclick="cloudSync()">🔄 Sincronizar ahora</button>
+      <button class="mini-btn" onclick="openHistoryModal()">🕘 Versiones anteriores</button>
       <button class="mini-btn danger" onclick="cloudSignOut()">Cerrar sesión de la nube</button>
     </div>
     <span class="form-hint" style="margin-top:10px;">Usa la <b>misma contraseña de la app</b> en todos tus dispositivos. Si la cambias en uno, los demás te la pedirán de nuevo.</span>
@@ -154,7 +155,7 @@ function writeLocalVaultClean(data, rev) {
 }
 
 // ---------- Fusión de cambios (3 vías: base / este dispositivo / nube) ----------
-const MERGE_ARRAYS = ['cards', 'cashTx', 'tx', 'transfers', 'stocks', 'dividends', 'invoices', 'recurring', 'goals'];
+const MERGE_ARRAYS = ['cards', 'cashTx', 'tx', 'transfers', 'stocks', 'dividends', 'invoices', 'recurring', 'goals', 'customCats'];
 const MERGE_FIELDS = ['cashBase', 'invested', 'gbmCashBase', 'fx', 'fxd', 'settings', 'budgets'];
 
 function mergeById(B, L, R) {
@@ -556,12 +557,72 @@ async function cloudBeforeReset() {
     try {
       const { error } = await Cloud.client.from('vaults').delete().eq('user_id', Cloud.user.id);
       if (error) throw error;
+      await Cloud.client.from('vault_history').delete().eq('user_id', Cloud.user.id);
     } catch (e) { toast('⚠️ No se pudo borrar de la nube: ' + cloudErrMsg(e), 6000); }
   } else {
     try { await Cloud.client.auth.signOut(); } catch (e) {}
     Cloud.user = null;
   }
   localStorage.removeItem(FORCE_UPLOAD_KEY);
+}
+
+// ---------- Versiones anteriores (tabla vault_history) ----------
+// Cada vez que la nube cambia, Supabase guarda la versión anterior (cifrada). Se conservan 30.
+async function openHistoryModal() {
+  if (!cloudActive()) { toast('Inicia sesión en la nube para ver versiones anteriores.'); return; }
+  const list = $('historyList');
+  list.innerHTML = '<div class="empty-state">⏳ Cargando…</div>';
+  openModal('historyModal');
+  try {
+    const { data, error } = await Cloud.client
+      .from('vault_history')
+      .select('id, rev, saved_at')
+      .eq('user_id', Cloud.user.id)
+      .order('id', { ascending: false })
+      .limit(30);
+    if (error) throw error;
+    if (!data || !data.length) {
+      list.innerHTML = '<div class="empty-state">Todavía no hay versiones anteriores. Se guardan solas cada vez que tus datos cambian en la nube.</div>';
+      return;
+    }
+    const fmt = t => new Date(t).toLocaleString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    list.innerHTML = data.map(r => `
+      <div class="plan-row">
+        <div class="plan-row-top">
+          <div>
+            <div class="plan-row-title">Versión ${num(r.rev)}</div>
+            <div class="plan-row-sub">Vigente hasta ${esc(fmt(r.saved_at))}</div>
+          </div>
+          <button class="mini-btn" onclick="restoreHistory(${num(r.id)})">↩️ Restaurar</button>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    const m = String((e && e.message) || e);
+    list.innerHTML = `<div class="alert-box warn"><span>⚠️</span><span>${/vault_history|does not exist|schema cache/i.test(m)
+      ? 'El historial aún no está activado en Supabase (falta la tabla <b>vault_history</b>).'
+      : esc(cloudErrMsg(e))}</span></div>`;
+  }
+}
+
+async function restoreHistory(id) {
+  if (!cloudActive()) return;
+  try {
+    const { data, error } = await Cloud.client.from('vault_history').select('data, rev').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!data || !data.data || !data.data.ct) { toast('⚠️ No se encontró esa versión.'); return; }
+    const box = data.data;
+    const apply = json => {
+      let parsed;
+      try { parsed = JSON.parse(json); } catch (x) { toast('⚠️ Esa versión está dañada.'); return; }
+      closeModal('historyModal');
+      replaceAllData(parsed, `↩️ Restaurada la versión ${num(data.rev)}`);
+    };
+    const alt = Cloud.altKeys[box.salt];
+    if (alt) { try { apply(await decryptText(alt, box.iv, box.ct)); return; } catch (x) { /* se intenta abajo */ } }
+    decryptWithKeyOrAsk(box, '🕘 Restaurar Versión Anterior', apply);
+  } catch (e) {
+    toast('⚠️ ' + cloudErrMsg(e), 5000);
+  }
 }
 
 // ---------- Eventos ----------

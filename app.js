@@ -9,7 +9,8 @@
 const LEGACY_KEY = 'fcf1';          // formato anterior (sin cifrar)
 const VAULT_KEY = 'bc_vault_v2';    // formato nuevo (cifrado)
 const THEME_KEY = 'theme_pref';
-const HIDE_KEY = 'bc_hide_amounts';  // modo privacidad: ocultar montos (preferencia de este dispositivo)
+const HIDE_KEY = 'bc_hide_amounts';
+const LAST_ACCT_KEY = 'bc_last_acct';  // última cuenta usada al registrar (solo el id, en este dispositivo)  // modo privacidad: ocultar montos (preferencia de este dispositivo)
 const PBKDF2_ITER = 250000;
 
 // Categorías
@@ -37,6 +38,14 @@ const EXPENSE_CATEGORIES = [
   { name: 'Otros Gastos', icon: '📦', color: '#64748b' }
 ];
 
+// Colores para las categorías propias
+const CAT_COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#06b6d4', '#f59e0b', '#ec4899', '#ef4444', '#64748b'];
+// Categorías de fábrica + las que crea el usuario (S.customCats)
+function customCats(k) { return (S.customCats || []).filter(c => c.k === k); }
+function incomeCats() { return INCOME_CATEGORIES.concat(customCats('in')); }
+function expenseCats() { return EXPENSE_CATEGORIES.concat(customCats('out')); }
+function catsFor(k) { return k === 'in' ? incomeCats() : expenseCats(); }
+
 // Ingresos que normalmente causan impuestos (se marcan por defecto)
 const TAXABLE_CATEGORIES = ['Cliente Freelance', 'Iguala Mensual / Retainer', 'Hito de Proyecto', 'Consultoría / Asesoría'];
 const TAX_PAY_CATEGORY = 'Pago de Impuestos (SAT)';
@@ -60,6 +69,7 @@ function defaultState() {
     invoices: [],     // [{id, client, concept, a, issued, due, acct, cat, status, paidDate, txRef}]
     recurring: [],    // [{id, k, a, n, c, acct, freq, next, day, active}]
     budgets: {},      // {categoría: monto mensual}
+    customCats: [],   // [{id, k:'in'|'out', name, icon, color}] categorías creadas por el usuario
     goals: [],        // [{id, name, target, saved, due}]
     settings: {
       taxEnabled: false,
@@ -172,21 +182,71 @@ function toast(msg, ms = 2800) {
   setTimeout(() => el.remove(), ms);
 }
 
+// Aviso con un botón (ej. "Deshacer")
+function toastAction(msg, label, onAction, ms = 6000) {
+  const wrap = $('toastWrap');
+  if (!wrap) return;
+  const el = document.createElement('div');
+  el.className = 'toast has-action';
+  el.setAttribute('role', 'status');
+  const span = document.createElement('span');
+  span.textContent = msg;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'toast-btn';
+  btn.textContent = label;
+  btn.onclick = () => { el.remove(); onAction(); };
+  el.append(span, btn);
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), ms);
+}
+
+// Hace un cambio, lo guarda y ofrece "Deshacer" unos segundos (en lugar de pedir confirmación)
+function withUndo(msg, change) {
+  const before = JSON.stringify(S);
+  if (change() === false) return;
+  saveState();
+  render();
+  const after = JSON.stringify(S);
+  toastAction(msg, 'Deshacer', () => {
+    if (!isAuthenticated) return;
+    if (JSON.stringify(S) !== after) { toast('Ya hiciste otros cambios: no se puede deshacer.'); return; }
+    S = normalizeState(JSON.parse(before));
+    saveState();
+    render();
+    toast('↩️ Listo, se deshizo');
+  });
+}
+
 function catInfo(name) {
-  return INCOME_CATEGORIES.concat(EXPENSE_CATEGORIES).find(c => c.name === name)
+  return INCOME_CATEGORIES.concat(EXPENSE_CATEGORIES, S.customCats || []).find(c => c.name === name)
     || (name === ADJUST_CATEGORY ? { icon: '✏️', color: '#64748b' } : { icon: '📌', color: '#64748b' });
 }
 
 // ==========================================
 // TEMA
 // ==========================================
-function initTheme() {
+function themePref() {
   let saved = null;
   try { saved = localStorage.getItem(THEME_KEY); } catch (e) {}
-  const theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  document.documentElement.setAttribute('data-theme', theme);
+  return saved === 'dark' || saved === 'light' ? saved : 'system';
+}
+function initTheme() {
+  const pref = themePref();
+  const sysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.setAttribute('data-theme', pref === 'system' ? (sysDark ? 'dark' : 'light') : pref);
 }
 initTheme();
+if (window.matchMedia) {
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  const onSys = () => { if (themePref() === 'system') { initTheme(); if (typeof render === 'function') render(); } };
+  if (mq.addEventListener) mq.addEventListener('change', onSys); else if (mq.addListener) mq.addListener(onSys);
+}
+function setThemePref(p) {
+  try { if (p === 'system') localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, p); } catch (e) {}
+  initTheme();
+  render();
+}
 
 function toggleAmounts() {
   hideAmounts = !hideAmounts;
@@ -294,7 +354,7 @@ function normalizeState(raw) {
   const d = defaultState();
   const st = Object.assign(d, raw);
   st.settings = Object.assign(defaultState().settings, raw.settings || {});
-  ['cards', 'cashTx', 'tx', 'transfers', 'stocks', 'dividends', 'snaps', 'invoices', 'recurring', 'goals']
+  ['cards', 'cashTx', 'tx', 'transfers', 'stocks', 'dividends', 'snaps', 'invoices', 'recurring', 'goals', 'customCats']
     .forEach(k => { if (!Array.isArray(st[k])) st[k] = []; });
   if (!st.budgets || typeof st.budgets !== 'object' || Array.isArray(st.budgets)) st.budgets = {};
 
@@ -362,6 +422,10 @@ function normalizeState(raw) {
   st.invoices.forEach(i => { if (!i.id) i.id = uid(); i.a = num(i.a); });
   st.recurring.forEach(r => { if (!r.id) r.id = uid(); r.a = num(r.a); if (r.active === undefined) r.active = true; });
   st.goals.forEach(g => { if (!g.id) g.id = uid(); g.target = num(g.target); g.saved = num(g.saved); });
+  st.customCats = st.customCats.filter(c => c && c.name).map(c => ({
+    id: c.id || 'cat_' + uid(), k: c.k === 'in' ? 'in' : 'out',
+    name: String(c.name).slice(0, 40), icon: String(c.icon || '📌').slice(0, 8), color: c.color || '#64748b'
+  }));
 
   st.fx = num(st.fx) > 0 ? num(st.fx) : 17.42;
   st.gbmCashBase = num(st.gbmCashBase);
@@ -863,10 +927,9 @@ function render() {
       <div class="header-actions">
         ${typeof cloudHeaderBadge === 'function' ? cloudHeaderBadge() : ''}
         <button class="btn-icon" onclick="toggleAmounts()" title="${hideAmounts ? 'Mostrar montos' : 'Ocultar montos'}" aria-label="${hideAmounts ? 'Mostrar montos' : 'Ocultar montos'}" aria-pressed="${hideAmounts}">${hideAmounts ? '🙈' : '👁️'}</button>
-        <button class="btn-icon" onclick="toggleTheme()" title="Modo claro / oscuro" aria-label="Cambiar tema">🌓</button>
         <button class="btn-icon" onclick="lockSession()" title="Bloquear" aria-label="Bloquear">🔒</button>
-        <button class="btn-icon" onclick="openTxModal('in')" title="Agregar ingreso" aria-label="Agregar ingreso" style="color:var(--income); font-weight:800;">＋</button>
-        <button class="btn-icon" onclick="openTxModal('out')" title="Agregar gasto" aria-label="Agregar gasto" style="color:var(--expense); font-weight:800;">−</button>
+        <button class="btn-icon desk-only" onclick="openTxModal('in')" title="Agregar ingreso" aria-label="Agregar ingreso" style="color:var(--income); font-weight:800;">＋</button>
+        <button class="btn-icon desk-only" onclick="openTxModal('out')" title="Agregar gasto" aria-label="Agregar gasto" style="color:var(--expense); font-weight:800;">−</button>
       </div>
     </header>
     <nav class="nav-tab-bar" aria-label="Secciones">
@@ -881,8 +944,39 @@ function render() {
   else if (currentTab === 'plan') tabHtml = renderPlan();
   else if (currentTab === 'data') tabHtml = renderData();
 
-  app.innerHTML = headerHtml + tabHtml;
+  app.innerHTML = headerHtml + tabHtml + fabHtml();
   if (!document.activeElement || document.activeElement === document.body) document.documentElement.classList.remove('kb-open');
+}
+
+// ---------- Botón flotante "+" (celular) ----------
+let fabOpen = false;
+function fabHtml() {
+  const items = [
+    ['out', '−', 'Gasto', 'expense'],
+    ['in', '＋', 'Ingreso', 'income'],
+    ['tr', '⇄', 'Transferencia', 'tr'],
+    ['cash', '💵', 'Efectivo', 'cash']
+  ];
+  return `
+    ${fabOpen ? `<div class="fab-backdrop" onclick="toggleFab(false)"></div>` : ''}
+    <div class="fab-wrap ${fabOpen ? 'open' : ''}">
+      ${fabOpen ? `<div class="fab-menu" role="menu">${items.map(([k, ico, lbl, cls]) => `
+        <button type="button" class="fab-item ${cls}" role="menuitem" onclick="fabGo('${k}')"><span class="fab-item-ico" aria-hidden="true">${ico}</span>${lbl}</button>`).join('')}
+      </div>` : ''}
+      <button type="button" class="fab" onclick="toggleFab()" aria-expanded="${fabOpen}" aria-label="${fabOpen ? 'Cerrar' : 'Registrar movimiento'}">${fabOpen ? '✕' : '＋'}</button>
+    </div>`;
+}
+function toggleFab(open) {
+  fabOpen = open === undefined ? !fabOpen : !!open;
+  const y = window.scrollY;
+  render();
+  window.scrollTo(0, y);
+}
+function fabGo(kind) {
+  toggleFab(false);
+  if (kind === 'tr') openTransferModal();
+  else if (kind === 'cash') openCashModal('out');
+  else openTxModal(kind);
 }
 
 // ---------- Pantalla de bloqueo ----------
@@ -1459,7 +1553,7 @@ function renderGbm() {
         <p>Ingresa el <b>capital total en Pesos (MXN)</b> que has depositado a GBM desde que empezaste (sin contar ganancias).</p>
         <div style="max-width:340px; margin:0 auto; text-align:left;">
           <label class="form-label" for="initInvestedInput">Total depositado de tu bolsillo ($ MXN):</label>
-          <input id="initInvestedInput" class="input-field" type="number" min="0" step="any" placeholder="Ej. 50000" style="margin-bottom:12px;">
+          <input id="initInvestedInput" class="input-field" type="number" inputmode="decimal" min="0" step="any" placeholder="Ej. 50000" style="margin-bottom:12px;">
           <button class="btn-submit" onclick="setInitialInvested()">Guardar y Continuar al Portafolio 🚀</button>
           <button class="btn-secondary" style="margin-top:8px;" onclick="setInitialInvested(0)">Aún no invierto, empezar en $0</button>
         </div>
@@ -1549,7 +1643,7 @@ function renderGbm() {
       </div>
       <div class="fx-input-row">
         <label for="fxInput" style="font-weight:800; font-size:15px;">1 USD =</label>
-        <input id="fxInput" type="number" step="any" min="0.0001" value="${num(S.fx)}" class="stock-price-input" style="width:110px; font-size:15px;" onchange="updateFxRate(this.value)">
+        <input id="fxInput" type="number" inputmode="decimal" step="any" min="0.0001" value="${num(S.fx)}" class="stock-price-input" style="width:110px; font-size:15px;" onchange="updateFxRate(this.value)">
         <span style="font-weight:800; font-size:15px;">MXN</span>
         <button class="mini-btn" id="fxAutoBtn" onclick="refreshFx(false)">🔄 Actualizar automático</button>
       </div>
@@ -1638,7 +1732,7 @@ function stockCardHtml(s) {
           <label class="stock-stat-lbl" for="price_${s.id}">Precio hoy (${s.c})</label>
           ${live ? `<span class="live-tag" title="${live.stale ? 'Último precio guardado' : 'Precio de Stocks App'}"><span class="live-dot"></span>${live.stale ? 'Guardado' : 'En vivo'}${live.pct != null ? ` · <b style="color:${live.pct >= 0 ? 'var(--income)' : 'var(--expense)'}">${fmtPct(live.pct)}</b> hoy` : ''}</span>` : ''}
           <div class="stock-price-input-wrap">
-            <input id="price_${s.id}" type="number" step="any" min="0" value="${cur}" class="stock-price-input" onchange="updateStockPrice('${s.id}', this.value)">
+            <input id="price_${s.id}" type="number" inputmode="decimal" step="any" min="0" value="${cur}" class="stock-price-input" onchange="updateStockPrice('${s.id}', this.value)">
           </div>
         </div>
       </div>
@@ -1779,7 +1873,7 @@ function renderPlan() {
           <div class="plan-row-top"><div class="plan-row-title">Total presupuestado</div><div class="plan-row-sub">${fmtMxn(budgetSpent)} de ${fmtMxn(budgetTotal)}</div></div>
           ${progressHtml(budgetSpent, budgetTotal)}
         </div>` : `<p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">Escribe un límite mensual en las categorías que quieras controlar. Te avisaremos al llegar al 80% y al 100%.</p>`}
-      ${EXPENSE_CATEGORIES.map(c => {
+      ${expenseCats().map((c, ci) => {
         const lim = num(S.budgets[c.name]);
         const s = spent[c.name] || 0;
         return `
@@ -1789,7 +1883,7 @@ function renderPlan() {
                 <div class="plan-row-title">${c.icon} ${esc(c.name)}</div>
                 <div class="plan-row-sub">Gastado este mes: ${fmtMxn(s)}${lim > 0 ? ` · Restante: ${fmtMxn(lim - s)}` : ''}</div>
               </div>
-              <input type="number" class="budget-input" min="0" step="any" placeholder="Sin límite" value="${lim > 0 ? lim : ''}" onchange="setBudget(${EXPENSE_CATEGORIES.indexOf(c)}, this.value)" aria-label="Presupuesto ${esc(c.name)}">
+              <input type="number" inputmode="decimal" class="budget-input" min="0" step="any" placeholder="Sin límite" value="${lim > 0 ? lim : ''}" onchange="setBudget(${ci}, this.value)" aria-label="Presupuesto ${esc(c.name)}">
             </div>
             ${lim > 0 ? progressHtml(s, lim) : ''}
           </div>`;
@@ -1877,6 +1971,16 @@ function renderData() {
 
     ${typeof cloudSettingsHtml === 'function' ? cloudSettingsHtml() : ''}
 
+    <div class="card">
+      <div class="card-title-row"><div class="card-title">🎨 Apariencia</div></div>
+      <div class="period-switcher" role="radiogroup" aria-label="Tema">
+        ${[['light', '☀️ Claro'], ['dark', '🌙 Oscuro'], ['system', '⚙️ Sistema']].map(([v, l]) => `
+          <button type="button" class="period-pill ${themePref() === v ? 'active' : ''}" role="radio" aria-checked="${themePref() === v}" onclick="setThemePref('${v}')">${l}</button>`).join('')}
+      </div>
+    </div>
+
+    ${categoriesSettingsHtml()}
+
     ${stocksSyncSettingsHtml()}
 
     <div class="card">
@@ -1887,7 +1991,7 @@ function renderData() {
       <div class="plan-row ${st.taxEnabled ? '' : 'hidden'}">
         <div class="plan-row-top">
           <label class="plan-row-title" for="taxRateInput">Porcentaje a apartar de cada ingreso</label>
-          <input id="taxRateInput" type="number" class="budget-input" min="0" max="100" step="any" value="${num(st.taxRate)}" onchange="updateSetting('taxRate', Math.min(100, Math.max(0, Number(this.value) || 0)))">
+          <input id="taxRateInput" type="number" inputmode="decimal" class="budget-input" min="0" max="100" step="any" value="${num(st.taxRate)}" onchange="updateSetting('taxRate', Math.min(100, Math.max(0, Number(this.value) || 0)))">
         </div>
         <div class="category-chips" style="margin-top:10px;">
           <button class="cat-chip" onclick="updateSetting('taxRate', 16)">RESICO + IVA ≈ 16%</button>
@@ -1909,9 +2013,12 @@ function renderData() {
       <div class="card-title-row"><div class="card-title">💾 Respaldo y Gestión de Datos</div></div>
       <p style="font-size:14px; color:var(--text-muted); margin-bottom:16px;">Tu información vive solo en este navegador. Descarga un respaldo con frecuencia: si borras los datos del navegador, se pierde.</p>
       <div style="display:flex; flex-direction:column; gap:12px;">
-        <button class="btn-submit" onclick="exportDataJSON()" style="background:var(--usd-color); margin-top:0;">💾 Descargar Respaldo (JSON)</button>
+        <button class="btn-submit" onclick="exportDataJSON()" style="background:var(--usd-color); margin-top:0;">🔐 Descargar Respaldo Cifrado</button>
         <button class="btn-submit" onclick="exportTransactionsCSV()" style="background:var(--mxn-color); margin-top:0;">📄 Exportar Movimientos a Excel / CSV</button>
-        <span class="form-hint">⚠️ El archivo de respaldo NO está cifrado (no incluye tu contraseña). Guárdalo en un lugar seguro.</span>
+        <span class="form-hint">${session.plain
+          ? '⚠️ En este navegador no hay cifrado: el respaldo se descarga sin cifrar.'
+          : '🔐 El respaldo va cifrado con tu contraseña actual: para restaurarlo necesitarás esa contraseña. No incluye la clave de Stocks App.'}</span>
+        ${session.plain ? '' : `<button type="button" class="link-btn" onclick="exportDataJSONPlain()">Descargar sin cifrar (para leerlo o usarlo en otro programa)</button>`}
         <div style="margin-top:10px; padding-top:16px; border-top:1px solid var(--divider);">
           <label class="form-label" for="importFileInput">Restaurar respaldo desde archivo JSON</label>
           <input type="file" id="importFileInput" accept=".json,application/json" class="input-field" onchange="importDataJSON(event)">
@@ -1939,6 +2046,7 @@ function renderData() {
 // ==========================================
 function setTab(t) {
   currentTab = t;
+  fabOpen = false;
   if (t !== 'bank') selectedBankCardId = null;
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2008,6 +2116,11 @@ function handleValueModalSubmit(e) {
 // ==========================================
 // MOVIMIENTOS: ALTA / EDICIÓN
 // ==========================================
+function lastAcct() {
+  let id = null;
+  try { id = localStorage.getItem(LAST_ACCT_KEY); } catch (e) {}
+  return id === 'cash' || S.cards.some(c => c.id === id) ? id : null;
+}
 function openTxModal(type = 'in', presetCat = null, editRec = null) {
   const editing = !!editRec;
   $('txType').value = type;
@@ -2017,22 +2130,17 @@ function openTxModal(type = 'in', presetCat = null, editRec = null) {
   $('txSubmitBtn').textContent = editing ? 'Guardar Cambios' : (type === 'in' ? 'Guardar Ingreso' : 'Guardar Gasto');
   $('txSubmitBtn').className = type === 'in' ? 'btn-submit' : 'btn-submit expense';
 
-  const defAcct = editing ? editRec.acct : (selectedBankCardId || (S.cards[0] ? S.cards[0].id : 'cash'));
+  const defAcct = editing ? editRec.acct : (selectedBankCardId || lastAcct() || (S.cards[0] ? S.cards[0].id : 'cash'));
   $('txCardSelect').innerHTML = accountOptionsHtml(defAcct, { cash: true });
   $('txAmount').value = editing ? editRec.a : '';
   $('txNote').value = editing ? (editRec.n || '') : '';
   $('txDate').value = editing ? editRec.d : today();
 
-  const cats = type === 'in' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const cats = catsFor(type);
   let sel = editing ? editRec.c : (presetCat || cats[0].name);
   if (!cats.find(c => c.name === sel) && sel !== ADJUST_CATEGORY) sel = sel || cats[0].name;
   $('txCategory').value = sel;
-  const list = cats.slice();
-  if (sel && !cats.find(c => c.name === sel)) list.push({ name: sel, icon: catInfo(sel).icon });
-  $('txCategoryChips').innerHTML = list.map((c, i) => `
-    <button type="button" class="cat-chip ${c.name === sel ? 'selected' : ''}" role="radio" aria-checked="${c.name === sel}" data-cat="${esc(c.name)}" onclick="selectCategoryChip(this)">
-      <span>${c.icon}</span><span>${esc(c.name)}</span>
-    </button>`).join('');
+  fillTxChips(type, sel);
 
   // Impuestos
   const taxGroup = $('txTaxGroup');
@@ -2049,6 +2157,18 @@ function openTxModal(type = 'in', presetCat = null, editRec = null) {
   $('txRecurring').checked = false;
 
   openModal('txModal', 'txAmount');
+}
+
+function fillTxChips(type, sel) {
+  const cats = catsFor(type);
+  const list = cats.slice();
+  if (sel && !cats.find(c => c.name === sel)) list.push({ name: sel, icon: catInfo(sel).icon });
+  $('txCategory').value = sel;
+  $('txCategoryChips').innerHTML = list.map(c => `
+    <button type="button" class="cat-chip ${c.name === sel ? 'selected' : ''}" role="radio" aria-checked="${c.name === sel}" data-cat="${esc(c.name)}" onclick="selectCategoryChip(this)">
+      <span>${esc(c.icon)}</span><span>${esc(c.name)}</span>
+    </button>`).join('') +
+    `<button type="button" class="cat-chip cat-chip-add" onclick="openCategoryModal(null, $('txType').value)"><span>＋</span><span>Nueva categoría</span></button>`;
 }
 
 function openTxModalForCard(type, cardId) {
@@ -2110,6 +2230,7 @@ function handleSaveTx(e) {
       S.recurring.push({ id: recId, k: type, a: round2(amt), n: note, c: cat, acct, freq: 'monthly', day: parseIso(date).getDate(), next: advanceDate(date, 'monthly'), active: true });
     }
     addMovement({ k: type, a: amt, n: note, d: date, c: cat, acct, tax, rec: recId });
+    try { localStorage.setItem(LAST_ACCT_KEY, acct); } catch (x) {}
     toast(type === 'in' ? '✅ Ingreso registrado' : '✅ Gasto registrado');
   }
   saveState();
@@ -2120,15 +2241,13 @@ function handleSaveTx(e) {
 function deleteMovement(src, id) {
   const rec = findMovement(src, id);
   if (!rec) return;
-  if (!confirm('¿Deseas eliminar este movimiento?')) return;
-  if (rec.inv) {
-    const inv = S.invoices.find(i => i.id === rec.inv);
-    if (inv) { inv.status = 'pending'; inv.paidDate = null; inv.txRef = null; }
-  }
-  removeMovement(src, id);
-  saveState();
-  render();
-  toast('🗑️ Movimiento eliminado');
+  withUndo('🗑️ Movimiento eliminado', () => {
+    if (rec.inv) {
+      const inv = S.invoices.find(i => i.id === rec.inv);
+      if (inv) { inv.status = 'pending'; inv.paidDate = null; inv.txRef = null; }
+    }
+    removeMovement(src, id);
+  });
 }
 
 // ==========================================
@@ -2250,15 +2369,13 @@ function deleteCard(cardId) {
   if (!c) return;
   const nTx = S.tx.filter(t => t.cardId === cardId).length;
   const nTr = S.transfers.filter(r => r.from === cardId || r.to === cardId).length;
-  if (!confirm(`¿Eliminar "${c.name}" junto con sus ${nTx} movimiento(s) y ${nTr} transferencia(s)?`)) return;
-  S.cards = S.cards.filter(x => x.id !== cardId);
-  S.tx = S.tx.filter(t => t.cardId !== cardId);
-  S.transfers = S.transfers.filter(r => r.from !== cardId && r.to !== cardId);
-  S.recurring.forEach(r => { if (r.acct === cardId) r.active = false; });
-  selectedBankCardId = null;
-  saveState();
-  render();
-  toast('🗑️ Tarjeta eliminada');
+  withUndo(`🗑️ "${c.name}" eliminada (${nTx} mov., ${nTr} transf.)`, () => {
+    S.cards = S.cards.filter(x => x.id !== cardId);
+    S.tx = S.tx.filter(t => t.cardId !== cardId);
+    S.transfers = S.transfers.filter(r => r.from !== cardId && r.to !== cardId);
+    S.recurring.forEach(r => { if (r.acct === cardId) r.active = false; });
+    selectedBankCardId = null;
+  });
 }
 
 // ==========================================
@@ -2289,7 +2406,7 @@ function setCashMode(mode) {
     $('cashPresetChips').style.display = 'none';
     $('cashCatGroup').classList.add('hidden');
   } else {
-    const cats = mode === 'in' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+    const cats = catsFor(mode);
     $('cashCategory').innerHTML = cats.map(c => `<option value="${esc(c.name)}">${c.icon} ${esc(c.name)}</option>`).join('');
     $('cashCategory').value = mode === 'in' ? 'Otros Ingresos' : 'Otros Gastos';
     $('cashCatGroup').classList.remove('hidden');
@@ -2524,16 +2641,15 @@ function toggleStockHistory(id) { expandedStocks[id] = !expandedStocks[id]; rend
 function deleteStock(id) {
   const s = S.stocks.find(x => x.id === id);
   if (!s) return;
-  if (!confirm(`¿Eliminar ${s.t} con todo su historial de compras, ventas y dividendos?`)) return;
-  S.stocks = S.stocks.filter(x => x.id !== id);
-  S.dividends = S.dividends.filter(d => d.stockId !== id);
-  saveState(); render();
+  withUndo(`🗑️ ${s.t} eliminada con su historial`, () => {
+    S.stocks = S.stocks.filter(x => x.id !== id);
+    S.dividends = S.dividends.filter(d => d.stockId !== id);
+  });
 }
 function deleteLot(id, idx) {
   const s = S.stocks.find(x => x.id === id);
-  if (!s || !confirm('¿Eliminar esta compra?')) return;
-  s.lots.splice(idx, 1);
-  saveState(); render();
+  if (!s) return;
+  withUndo('🗑️ Compra eliminada', () => { s.lots.splice(idx, 1); });
 }
 
 function openSellModal(id) {
@@ -2583,10 +2699,11 @@ function deleteSale(stockId, saleId) {
   const s = S.stocks.find(x => x.id === stockId);
   if (!s) return;
   const x = s.sales.find(v => v.id === saleId);
-  if (!x || !confirm('¿Deshacer esta venta? Los títulos regresarán a tu posición.')) return;
-  s.lots.push({ q: x.q, b: x.avg, d: x.bd || x.d, paid: num(x.paidRemoved) });
-  s.sales = s.sales.filter(v => v.id !== saleId);
-  saveState(); render();
+  if (!x) return;
+  withUndo('↩️ Venta anulada: los títulos regresaron a tu posición', () => {
+    s.lots.push({ q: x.q, b: x.avg, d: x.bd || x.d, paid: num(x.paidRemoved) });
+    s.sales = s.sales.filter(v => v.id !== saleId);
+  });
 }
 
 function openDividendModal(stockId = null) {
@@ -2614,9 +2731,7 @@ function handleSaveDividend(e) {
   toast('💰 Dividendo registrado');
 }
 function deleteDividend(id) {
-  if (!confirm('¿Eliminar este dividendo?')) return;
-  S.dividends = S.dividends.filter(d => d.id !== id);
-  saveState(); render();
+  withUndo('🗑️ Dividendo eliminado', () => { S.dividends = S.dividends.filter(d => d.id !== id); });
 }
 
 // ---------- Tipo de cambio ----------
@@ -2882,7 +2997,7 @@ function openInvoiceModal(id = null) {
   $('invDue').value = inv ? inv.due : iso(due);
   const defAcct = inv ? inv.acct : ((S.cards.find(c => c.type !== 'credit') || {}).id || 'cash');
   $('invAccount').innerHTML = accountOptionsHtml(defAcct, { cash: true });
-  $('invCategory').innerHTML = INCOME_CATEGORIES.map(c => `<option value="${esc(c.name)}">${c.icon} ${esc(c.name)}</option>`).join('');
+  $('invCategory').innerHTML = incomeCats().map(c => `<option value="${esc(c.name)}">${c.icon} ${esc(c.name)}</option>`).join('');
   $('invCategory').value = inv ? inv.cat : 'Cliente Freelance';
   openModal('invoiceModal', 'invClient');
 }
@@ -2906,30 +3021,28 @@ function handleSaveInvoice(e) {
 function markInvoicePaid(id) {
   const inv = S.invoices.find(i => i.id === id);
   if (!inv) return;
-  if (!confirm(`¿Registrar el cobro de ${fmtMxn(inv.a)} de ${inv.client} en ${accountName(inv.acct)} con fecha de hoy?`)) return;
   const acct = inv.acct === 'cash' || S.cards.find(c => c.id === inv.acct) ? inv.acct : (S.cards[0] ? S.cards[0].id : 'cash');
-  inv.txRef = addMovement({ k: 'in', a: inv.a, n: `Cobro ${inv.client}${inv.concept ? ' · ' + inv.concept : ''}`, d: today(), c: inv.cat, acct, tax: defaultTaxFor(inv.cat), inv: inv.id });
-  inv.status = 'paid';
-  inv.paidDate = today();
-  saveState(); render();
-  toast('✅ Cobro registrado como ingreso');
+  withUndo(`✅ Cobro de ${fmtMxn(inv.a)} registrado en ${accountName(acct)}`, () => {
+    inv.txRef = addMovement({ k: 'in', a: inv.a, n: `Cobro ${inv.client}${inv.concept ? ' · ' + inv.concept : ''}`, d: today(), c: inv.cat, acct, tax: defaultTaxFor(inv.cat), inv: inv.id });
+    inv.status = 'paid';
+    inv.paidDate = today();
+  });
 }
 function markInvoiceUnpaid(id) {
   const inv = S.invoices.find(i => i.id === id);
-  if (!inv || !confirm('¿Deshacer el cobro? Se eliminará el ingreso registrado.')) return;
-  S.tx = S.tx.filter(t => t.inv !== id);
-  S.cashTx = S.cashTx.filter(t => t.inv !== id);
-  inv.status = 'pending'; inv.paidDate = null; inv.txRef = null;
-  saveState(); render();
+  if (!inv) return;
+  withUndo('↩️ Cobro anulado: se quitó el ingreso', () => {
+    S.tx = S.tx.filter(t => t.inv !== id);
+    S.cashTx = S.cashTx.filter(t => t.inv !== id);
+    inv.status = 'pending'; inv.paidDate = null; inv.txRef = null;
+  });
 }
 function deleteInvoice(id) {
-  if (!confirm('¿Eliminar esta cuenta por cobrar?')) return;
-  S.invoices = S.invoices.filter(i => i.id !== id);
-  saveState(); render();
+  withUndo('🗑️ Cuenta por cobrar eliminada', () => { S.invoices = S.invoices.filter(i => i.id !== id); });
 }
 
 function fillRecCategories(selected) {
-  const cats = $('recType').value === 'in' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const cats = catsFor($('recType').value);
   $('recCategory').innerHTML = cats.map(c => `<option value="${esc(c.name)}">${c.icon} ${esc(c.name)}</option>`).join('');
   $('recCategory').value = selected && cats.find(c => c.name === selected) ? selected : cats[0].name;
 }
@@ -2970,13 +3083,104 @@ function toggleRecurring(id) {
   if (created) toast(`🔁 ${created} movimiento(s) registrados`);
 }
 function deleteRecurring(id) {
-  if (!confirm('¿Eliminar este recurrente? Los movimientos ya registrados se conservan.')) return;
-  S.recurring = S.recurring.filter(x => x.id !== id);
-  saveState(); render();
+  withUndo('🗑️ Recurrente eliminado (los movimientos ya registrados se quedan)', () => { S.recurring = S.recurring.filter(x => x.id !== id); });
+}
+
+// ---------- Categorías propias ----------
+function categoriesSettingsHtml() {
+  const row = c => `
+    <div class="plan-row">
+      <div class="plan-row-top">
+        <div class="plan-row-title"><span class="cat-dot" style="background:${esc(c.color)};"></span> ${esc(c.icon)} ${esc(c.name)}</div>
+        <div class="stock-actions" style="margin-top:0;">
+          <button class="mini-btn" onclick="openCategoryModal('${c.id}')" aria-label="Editar ${esc(c.name)}">✏️</button>
+          <button class="mini-btn danger" onclick="deleteCategory('${c.id}')" aria-label="Eliminar ${esc(c.name)}">🗑️</button>
+        </div>
+      </div>
+    </div>`;
+  const group = (k, title) => {
+    const list = customCats(k);
+    return `<div class="plan-row-sub" style="margin:12px 0 6px;">${title}</div>
+      ${list.length ? list.map(row).join('') : `<div class="form-hint" style="margin-bottom:6px;">Aún no tienes categorías propias de ${k === 'in' ? 'ingreso' : 'gasto'}.</div>`}`;
+  };
+  return `
+    <div class="card">
+      <div class="card-title-row" style="flex-wrap:wrap; gap:8px;">
+        <div class="card-title">🏷️ Mis Categorías</div>
+        <button class="period-pill active" onclick="openCategoryModal()">+ Nueva</button>
+      </div>
+      <p style="font-size:13px; color:var(--text-muted);">Además de las categorías de fábrica, crea las tuyas (ej. Gasolina, Mascotas, Cliente ABC). Si cambias el nombre, tus movimientos se actualizan solos.</p>
+      ${group('out', 'Gastos')}
+      ${group('in', 'Ingresos')}
+    </div>`;
+}
+
+function openCategoryModal(id = null, type = 'out') {
+  const c = id ? (S.customCats || []).find(x => x.id === id) : null;
+  $('catEditId').value = c ? c.id : '';
+  $('catModalTitle').textContent = c ? '✏️ Editar Categoría' : '🏷️ Nueva Categoría';
+  $('catType').value = c ? c.k : (type === 'in' ? 'in' : 'out');
+  $('catType').disabled = !!c;
+  $('catName').value = c ? c.name : '';
+  $('catIcon').value = c ? c.icon : '';
+  $('catErrorMsg').textContent = '';
+  const color = c ? c.color : CAT_COLORS[(S.customCats || []).length % CAT_COLORS.length];
+  $('catColor').value = color;
+  $('catColorPicker').innerHTML = CAT_COLORS.map(col => `
+    <button type="button" class="cat-color-btn ${col === color ? 'selected' : ''}" style="background:${col};" onclick="selectCatColor('${col}', this)" aria-label="Color ${col}" aria-pressed="${col === color}"></button>`).join('');
+  openModal('categoryModal', 'catName');
+}
+function selectCatColor(col, btn) {
+  $('catColor').value = col;
+  $('catColorPicker').querySelectorAll('.cat-color-btn').forEach(b => { b.classList.remove('selected'); b.setAttribute('aria-pressed', 'false'); });
+  btn.classList.add('selected');
+  btn.setAttribute('aria-pressed', 'true');
+}
+function renameCategoryEverywhere(oldName, newName) {
+  if (oldName === newName) return;
+  S.tx.concat(S.cashTx, S.recurring).forEach(m => { if (m.c === oldName) m.c = newName; });
+  S.invoices.forEach(i => { if (i.cat === oldName) i.cat = newName; });
+  if (S.budgets[oldName] !== undefined) { S.budgets[newName] = S.budgets[oldName]; delete S.budgets[oldName]; }
+}
+function handleSaveCategory(e) {
+  e.preventDefault();
+  const id = $('catEditId').value;
+  const k = $('catType').value === 'in' ? 'in' : 'out';
+  const name = $('catName').value.trim().replace(/\s+/g, ' ');
+  const icon = $('catIcon').value.trim() || '📌';
+  const color = $('catColor').value || '#64748b';
+  const err = $('catErrorMsg');
+  if (!name) { err.textContent = 'Escribe un nombre.'; return; }
+  const taken = INCOME_CATEGORIES.concat(EXPENSE_CATEGORIES, S.customCats || [])
+    .some(c => c.id !== id && c.name.toLowerCase() === name.toLowerCase());
+  if (taken || name === ADJUST_CATEGORY) { err.textContent = 'Ya existe una categoría con ese nombre.'; return; }
+  if (!Array.isArray(S.customCats)) S.customCats = [];
+  if (id) {
+    const c = S.customCats.find(x => x.id === id);
+    if (!c) return;
+    renameCategoryEverywhere(c.name, name);
+    Object.assign(c, { name, icon, color });
+  } else {
+    S.customCats.push({ id: 'cat_' + uid(), k, name, icon, color });
+  }
+  saveState();
+  closeModal('categoryModal');
+  render();
+  // Si se creó desde el formulario de movimiento, dejarla seleccionada ahí
+  if (!id && $('txModal').classList.contains('open') && $('txType').value === k) fillTxChips(k, name);
+  toast(id ? '✏️ Categoría actualizada' : '🏷️ Categoría creada');
+}
+function deleteCategory(id) {
+  const c = (S.customCats || []).find(x => x.id === id);
+  if (!c) return;
+  withUndo(`🗑️ Categoría "${c.name}" eliminada (tus movimientos conservan el nombre)`, () => {
+    S.customCats = S.customCats.filter(x => x.id !== id);
+    delete S.budgets[c.name];
+  });
 }
 
 function setBudget(catIdx, val) {
-  const cat = EXPENSE_CATEGORIES[catIdx];
+  const cat = expenseCats()[catIdx];
   if (!cat) return;
   const v = parseFloat(val);
   if (isNaN(v) || v <= 0) delete S.budgets[cat.name];
@@ -3024,9 +3228,7 @@ function contributeGoal(id) {
   });
 }
 function deleteGoal(id) {
-  if (!confirm('¿Eliminar esta meta?')) return;
-  S.goals = S.goals.filter(x => x.id !== id);
-  saveState(); render();
+  withUndo('🗑️ Meta eliminada', () => { S.goals = S.goals.filter(x => x.id !== id); });
 }
 
 // ==========================================
@@ -3122,6 +3324,8 @@ async function lockSession() {
   if (!isAuthenticated) return;
   await saveChain;
   if (typeof cloudOnLock === 'function') cloudOnLock();
+  document.querySelectorAll('.toast.has-action').forEach(el => el.remove());
+  fabOpen = false;
   S = defaultState();
   session = emptySession();
   isAuthenticated = false;
@@ -3226,9 +3430,81 @@ function downloadBlob(content, type, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
-function exportDataJSON() {
-  downloadBlob(JSON.stringify(S, null, 2), 'application/json', `budget_control_respaldo_${today()}.json`);
-  toast('💾 Respaldo descargado');
+// Copia de los datos para respaldo: nunca incluye la clave de Stocks App
+function backupState() {
+  const o = JSON.parse(JSON.stringify(S));
+  if (o.settings) delete o.settings.stocksKey;
+  return o;
+}
+async function exportDataJSON() {
+  if (session.plain || !session.key) { exportDataJSONPlain(); return; }
+  try {
+    const { iv, ct } = await encryptText(session.key, JSON.stringify(backupState()));
+    const file = { app: 'budget-control', kind: 'backup', v: 2, enc: true, created: new Date().toISOString(), salt: bufToB64(session.salt), iter: session.iter, iv, ct };
+    downloadBlob(JSON.stringify(file), 'application/json', `budget_control_respaldo_cifrado_${today()}.json`);
+    toast('🔐 Respaldo cifrado descargado');
+  } catch (e) {
+    toast('⚠️ No se pudo crear el respaldo: ' + (e && e.message ? e.message : e), 5000);
+  }
+}
+function exportDataJSONPlain() {
+  downloadBlob(JSON.stringify(backupState(), null, 2), 'application/json', `budget_control_respaldo_SIN_CIFRAR_${today()}.json`);
+  toast('💾 Respaldo sin cifrar descargado: guárdalo en un lugar seguro', 4000);
+}
+
+// Ventana para pedir una contraseña (respaldo cifrado o versión anterior con otra contraseña)
+let passPromptHandler = null;
+function askPassword({ title, text, onSubmit }) {
+  $('passPromptTitle').textContent = title;
+  $('passPromptText').textContent = text;
+  $('passPromptInput').value = '';
+  $('passPromptInput').type = 'password';
+  $('passPromptMsg').textContent = '';
+  passPromptHandler = onSubmit;
+  openModal('passPromptModal', 'passPromptInput');
+}
+async function handlePassPrompt(e) {
+  e.preventDefault();
+  const pass = $('passPromptInput').value;
+  if (!pass || !passPromptHandler) return;
+  const btn = $('passPromptBtn');
+  btn.disabled = true;
+  $('passPromptMsg').textContent = '⏳ Verificando…';
+  try {
+    const ok = await passPromptHandler(pass);
+    if (ok === false) { $('passPromptMsg').textContent = '❌ Contraseña incorrecta.'; return; }
+    closeModal('passPromptModal');
+  } finally { btn.disabled = false; }
+}
+
+// Descifra un respaldo/versión {salt, iter, iv, ct}: primero con la clave actual, si no, pidiendo la contraseña
+async function decryptWithKeyOrAsk(box, title, onPlain) {
+  if (session.key && session.salt && box.salt === bufToB64(session.salt)) {
+    try { onPlain(await decryptText(session.key, box.iv, box.ct)); return; } catch (e) { /* se pide la contraseña */ }
+  }
+  if (!hasCrypto) { toast('⚠️ Este navegador no puede descifrar el archivo.'); return; }
+  askPassword({
+    title,
+    text: 'Se creó con otra contraseña. Escribe la contraseña que usabas en ese momento.',
+    onSubmit: async pass => {
+      try {
+        const key = await deriveKey(pass, b64ToBuf(box.salt), box.iter || PBKDF2_ITER);
+        const json = await decryptText(key, box.iv, box.ct);
+        setTimeout(() => onPlain(json), 0);
+        return true;
+      } catch (x) { return false; }
+    }
+  });
+}
+
+// Reemplaza todos los datos por otros (respaldo o versión anterior), conservando la clave de Stocks App
+function replaceAllData(data, msg) {
+  const keep = S.settings && S.settings.stocksKey;
+  withUndo(msg, () => {
+    S = normalizeState(data);
+    if (keep && !S.settings.stocksKey) S.settings.stocksKey = keep;
+    processRecurring();
+  });
 }
 
 function exportTransactionsCSV() {
@@ -3252,15 +3528,21 @@ function importDataJSON(e) {
   reader.onload = evt => {
     try {
       const imported = JSON.parse(evt.target.result);
-      const valid = imported && typeof imported === 'object' &&
-        ['cards', 'tx', 'cashTx', 'stocks', 'budget', 'transfers'].some(k => imported[k] !== undefined);
-      if (!valid) { toast('⚠️ El archivo no tiene el formato correcto.'); return; }
-      if (!confirm('Esto REEMPLAZARÁ todos tus datos actuales por los del respaldo. Tu contraseña actual se conserva. ¿Continuar?')) { e.target.value = ''; return; }
-      S = normalizeState(imported);
-      processRecurring();
-      saveState();
-      render();
-      toast('✅ Datos restaurados con éxito', 3500);
+      e.target.value = '';
+      const restore = data => {
+        const valid = data && typeof data === 'object' &&
+          ['cards', 'tx', 'cashTx', 'stocks', 'budget', 'transfers'].some(k => data[k] !== undefined);
+        if (!valid) { toast('⚠️ El archivo no tiene el formato correcto.'); return; }
+        if (!confirm('Esto REEMPLAZARÁ todos tus datos actuales por los del respaldo. Tu contraseña actual se conserva. ¿Continuar?')) return;
+        replaceAllData(data, '✅ Respaldo restaurado');
+      };
+      if (imported && imported.enc && imported.ct) {
+        decryptWithKeyOrAsk(imported, '🔐 Abrir Respaldo Cifrado', json => {
+          try { restore(JSON.parse(json)); } catch (x) { toast('⚠️ El respaldo está dañado.'); }
+        });
+      } else {
+        restore(imported);
+      }
     } catch (err) {
       toast('⚠️ Error al leer el archivo JSON.');
     }

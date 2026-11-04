@@ -38,7 +38,7 @@
 
       <div class="form-group">
         <label class="form-label" for="txAmount">Monto ($ MXN)</label>
-        <input type="number" id="txAmount" class="input-field" step="any" min="0.01" placeholder="Ej. 15000.00" required>
+        <input type="number" inputmode="decimal" id="txAmount" class="input-field" step="any" min="0.01" placeholder="Ej. 15000.00" required>
       </div>
 
       <div class="form-group">
@@ -91,7 +91,7 @@
       </div>
       <div class="form-group">
         <label class="form-label" for="trAmount">Monto ($ MXN)</label>
-        <input type="number" id="trAmount" class="input-field" step="any" min="0.01" required>
+        <input type="number" inputmode="decimal" id="trAmount" class="input-field" step="any" min="0.01" required>
       </div>
       <div class="form-group">
         <label class="form-label" for="trNote">Nota (opcional)</label>
@@ -132,22 +132,22 @@
 
       <div class="form-group">
         <label class="form-label" for="cardInitialInput" id="cardInitialLabel">Saldo Inicial ($ MXN)</label>
-        <input type="number" id="cardInitialInput" class="input-field" step="any" min="0" placeholder="Ej. 25000.00" required>
+        <input type="number" inputmode="decimal" id="cardInitialInput" class="input-field" step="any" min="0" placeholder="Ej. 25000.00" required>
       </div>
 
       <div id="creditFields" class="hidden">
         <div class="form-group">
           <label class="form-label" for="cardLimitInput">Límite de Crédito ($ MXN)</label>
-          <input type="number" id="cardLimitInput" class="input-field" step="any" min="0" placeholder="Ej. 50000">
+          <input type="number" inputmode="decimal" id="cardLimitInput" class="input-field" step="any" min="0" placeholder="Ej. 50000">
         </div>
         <div class="form-row-2">
           <div class="form-group">
             <label class="form-label" for="cardCutInput">Día de Corte</label>
-            <input type="number" id="cardCutInput" class="input-field" min="1" max="31" placeholder="Ej. 15">
+            <input type="number" inputmode="numeric" id="cardCutInput" class="input-field" min="1" max="31" placeholder="Ej. 15">
           </div>
           <div class="form-group">
             <label class="form-label" for="cardPayInput">Día Límite de Pago</label>
-            <input type="number" id="cardPayInput" class="input-field" min="1" max="31" placeholder="Ej. 5">
+            <input type="number" inputmode="numeric" id="cardPayInput" class="input-field" min="1" max="31" placeholder="Ej. 5">
           </div>
         </div>
       </div>
@@ -198,11 +198,11 @@
       <div class="form-row-2">
         <div class="form-group">
           <label class="form-label" for="stockShares">Títulos</label>
-          <input type="number" id="stockShares" class="input-field" step="any" min="0.000001" placeholder="Ej. 10" required>
+          <input type="number" inputmode="decimal" id="stockShares" class="input-field" step="any" min="0.000001" placeholder="Ej. 10" required>
         </div>
         <div class="form-group">
           <label class="form-label" for="stockBuyPrice" id="stockBuyPriceLabel">Precio (USD)</label>
-          <input type="number" id="stockBuyPrice" class="input-field" step="any" min="0.0001" placeholder="Ej. 185.50" required>
+          <input type="number" inputmode="decimal" id="stockBuyPrice" class="input-field" step="any" min="0.0001" placeholder="Ej. 185.50" required>
         </div>
       </div>
 
@@ -233,12 +233,12 @@
       <div class="form-row-2">
         <div class="form-group">
           <label class="form-label" for="sellShares">Títulos a Vender</label>
-          <input type="number" id="sellShares" class="input-field" step="any" min="0.000001" required>
+          <input type="number" inputmode="decimal" id="sellShares" class="input-field" step="any" min="0.000001" required>
           <span class="form-hint" id="sellMaxHint"></span>
         </div>
         <div class="form-group">
           <label class="form-label" for="sellPrice" id="sellPriceLabel">Precio de Venta</label>
-          <input type="number" id="sellPrice" class="input-field" step="any" min="0.0001" required>
+          <input type="number" inputmode="decimal" id="sellPrice" class="input-field" step="any" min="0.0001" required>
         </div>
       </div>
       <div class="form-group">
@@ -267,7 +267,7 @@
       </div>
       <div class="form-group">
         <label class="form-label" for="divAmount" id="divAmountLabel">Monto Neto Recibido</label>
-        <input type="number" id="divAmount" class="input-field" step="any" min="0.01" required>
+        <input type="number" inputmode="decimal" id="divAmount" class="input-field" step="any" min="0.01" required>
       </div>
       <div class="form-group">
         <label class="form-label" for="divDate">Fecha</label>
@@ -304,7 +304,7 @@
 
       <div class="form-group">
         <label class="form-label" for="gbmCapitalAmount" id="gbmCapitalInputLabel">Monto a Depositar ($ MXN)</label>
-        <input type="number" id="gbmCapitalAmount" class="input-field" step="any" min="0.01" placeholder="Ej. 5000.00" required oninput="updateGbmCapitalPreview()">
+        <input type="number" inputmode="decimal" id="gbmCapitalAmount" class="input-field" step="any" min="0.01" placeholder="Ej. 5000.00" required oninput="updateGbmCapitalPreview()">
       </div>
 
       <div class="category-chips" id="gbmPresetChips" style="margin-top:-6px; margin-bottom:16px;">
@@ -354,7 +354,7 @@
 
       <div class="form-group">
         <label class="form-label" for="cashAmount" id="cashAmountLabel">Monto a Agregar ($ MXN)</label>
-        <input type="number" id="cashAmount" class="input-field" step="any" min="0" placeholder="Ej. 500.00" required oninput="updateCashPreview()">
+        <input type="number" inputmode="decimal" id="cashAmount" class="input-field" step="any" min="0" placeholder="Ej. 500.00" required oninput="updateCashPreview()">
       </div>
 
       <div class="category-chips" id="cashPresetChips" style="margin-top:-6px; margin-bottom:16px;">
@@ -421,7 +421,7 @@
       </div>
       <div class="form-group">
         <label class="form-label" for="invAmount">Monto a Cobrar ($ MXN)</label>
-        <input type="number" id="invAmount" class="input-field" step="any" min="0.01" required>
+        <input type="number" inputmode="decimal" id="invAmount" class="input-field" step="any" min="0.01" required>
       </div>
       <div class="form-row-2">
         <div class="form-group">
@@ -481,7 +481,7 @@
       </div>
       <div class="form-group">
         <label class="form-label" for="recAmount">Monto ($ MXN)</label>
-        <input type="number" id="recAmount" class="input-field" step="any" min="0.01" required>
+        <input type="number" inputmode="decimal" id="recAmount" class="input-field" step="any" min="0.01" required>
       </div>
       <div class="form-row-2">
         <div class="form-group">
@@ -519,11 +519,11 @@
       <div class="form-row-2">
         <div class="form-group">
           <label class="form-label" for="goalTarget">Monto Objetivo</label>
-          <input type="number" id="goalTarget" class="input-field" step="any" min="1" required>
+          <input type="number" inputmode="decimal" id="goalTarget" class="input-field" step="any" min="1" required>
         </div>
         <div class="form-group">
           <label class="form-label" for="goalSaved">Ya Ahorrado</label>
-          <input type="number" id="goalSaved" class="input-field" step="any" min="0" value="0">
+          <input type="number" inputmode="decimal" id="goalSaved" class="input-field" step="any" min="0" value="0">
         </div>
       </div>
       <div class="form-group">
@@ -545,7 +545,7 @@
     <form id="valueForm" onsubmit="handleValueModalSubmit(event)">
       <div class="form-group">
         <label class="form-label" for="valueInput" id="valueModalLabel">Monto ($ MXN)</label>
-        <input type="number" id="valueInput" class="input-field" step="any" required>
+        <input type="number" inputmode="decimal" id="valueInput" class="input-field" step="any" required>
         <span class="form-hint" id="valueModalHint"></span>
       </div>
       <button type="submit" class="btn-submit" id="valueModalBtn">Guardar</button>
@@ -639,6 +639,77 @@
       <button type="submit" class="btn-submit" id="cloudLoginBtn" style="margin-top:0;">Iniciar sesión</button>
       <button type="button" class="btn-secondary" id="cloudSignupBtn" style="margin-top:10px;" onclick="handleCloudAuth('signup')">Crear cuenta nueva</button>
     </form>
+  </div>
+</div>
+
+<!-- Modal: Categoría propia -->
+<div class="modal-overlay" id="categoryModal" onclick="closeModalOnBg(event,'categoryModal')">
+  <div class="modal-content" style="max-width:440px;" role="dialog" aria-modal="true" aria-labelledby="catModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="catModalTitle">🏷️ Nueva Categoría</div>
+      <button class="modal-close" onclick="closeModal('categoryModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="categoryForm" onsubmit="handleSaveCategory(event)">
+      <input type="hidden" id="catEditId" value="">
+      <input type="hidden" id="catColor" value="">
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label" for="catType">Tipo</label>
+          <select id="catType" class="select-field">
+            <option value="out">− Gasto</option>
+            <option value="in">＋ Ingreso</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="catIcon">Ícono (emoji)</label>
+          <input type="text" id="catIcon" class="input-field" placeholder="Ej. ⛽" maxlength="8">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="catName">Nombre</label>
+        <input type="text" id="catName" class="input-field" placeholder="Ej. Gasolina, Mascotas, Cliente ABC" required maxlength="40">
+      </div>
+      <div class="form-group">
+        <span class="form-label">Color</span>
+        <div class="cat-color-grid" id="catColorPicker"></div>
+      </div>
+      <div id="catErrorMsg" class="lock-error-msg" role="alert" style="margin-bottom:6px;"></div>
+      <button type="submit" class="btn-submit">Guardar Categoría</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Pedir contraseña (respaldo cifrado / versión anterior) -->
+<div class="modal-overlay" id="passPromptModal" onclick="closeModalOnBg(event,'passPromptModal')">
+  <div class="modal-content" style="max-width:420px;" role="dialog" aria-modal="true" aria-labelledby="passPromptTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="passPromptTitle">🔐 Contraseña</div>
+      <button class="modal-close" onclick="closeModal('passPromptModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <form onsubmit="handlePassPrompt(event)">
+      <p id="passPromptText" style="font-size:13px; color:var(--text-muted); margin-bottom:12px;"></p>
+      <div class="form-group">
+        <label class="form-label" for="passPromptInput">Contraseña de la app</label>
+        <div class="password-input-wrap">
+          <input type="password" id="passPromptInput" class="input-field" autocomplete="current-password" required>
+          <button type="button" class="toggle-pass-btn" onclick="togglePassVisibility('passPromptInput', this)" aria-label="Ver u ocultar">👁️</button>
+        </div>
+      </div>
+      <div id="passPromptMsg" class="lock-error-msg" role="alert" style="margin-bottom:6px;"></div>
+      <button type="submit" class="btn-submit" id="passPromptBtn">Abrir</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Versiones anteriores en la nube -->
+<div class="modal-overlay" id="historyModal" onclick="closeModalOnBg(event,'historyModal')">
+  <div class="modal-content" style="max-width:460px;" role="dialog" aria-modal="true" aria-labelledby="historyModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="historyModalTitle">🕘 Versiones Anteriores</div>
+      <button class="modal-close" onclick="closeModal('historyModal')" aria-label="Cerrar">✕</button>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">La nube guarda tus últimas 30 versiones (cifradas). Al restaurar una, la actual también queda guardada, así que puedes regresar.</p>
+    <div id="historyList"></div>
   </div>
 </div>
 

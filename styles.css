@@ -1799,3 +1799,122 @@ a.mini-btn { display: inline-block; text-decoration: none; }
   .nav-tab-btn.active { box-shadow: none; }
   .toast-wrap { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
 }
+
+/* ========================================================
+   ADICIONES v4: deshacer, botón flotante, categorías propias
+   ======================================================== */
+.toast-wrap { width: max-content; max-width: calc(100vw - 32px); }
+.toast.has-action {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.toast-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+  padding: 4px 2px;
+  white-space: nowrap;
+}
+
+.cat-chip-add { border-style: dashed; }
+
+.cat-color-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.cat-color-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+.cat-color-btn.selected {
+  border-color: var(--text-main);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+
+/* Botón flotante: solo en el celular */
+.fab-wrap, .fab-backdrop { display: none; }
+
+@media (max-width: 640px) {
+  .desk-only { display: none !important; }
+  .fab-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 940;
+    background: rgba(15, 23, 42, 0.25);
+  }
+  .fab-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    position: fixed;
+    right: 16px;
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    z-index: 950;
+  }
+  .fab {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: none;
+    background: var(--primary);
+    color: #fff;
+    font-size: 28px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 8px 22px rgba(0, 184, 124, 0.4);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .fab-wrap.open .fab { background: var(--text-main); color: var(--bg); box-shadow: var(--shadow-lg); }
+  .fab-menu { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  .fab-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px 10px 12px;
+    border-radius: 14px;
+    border: 1px solid var(--card-border);
+    background: var(--surface);
+    color: var(--text-main);
+    font: inherit;
+    font-size: 14.5px;
+    font-weight: 800;
+    box-shadow: var(--shadow-lg);
+    cursor: pointer;
+    animation: toastIn 0.18s ease-out;
+  }
+  .fab-item-ico {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-subtle);
+    font-size: 16px;
+  }
+  .fab-item.expense .fab-item-ico { color: var(--expense); }
+  .fab-item.income .fab-item-ico { color: var(--income); }
+  .kb-open .fab-wrap, .kb-open .fab-backdrop { display: none; }
+  /* Los avisos van arriba del botón flotante */
+  .toast-wrap { bottom: calc(146px + env(safe-area-inset-bottom, 0px)); }
+}
