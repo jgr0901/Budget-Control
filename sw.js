@@ -1,5 +1,5 @@
 // Service worker: permite usar la app sin internet una vez instalada.
-const CACHE = 'budget-control-v6';
+const CACHE = 'budget-control-v7';
 const ASSETS = [
   './',
   './index.html',
