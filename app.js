@@ -3242,9 +3242,10 @@ async function handleAuth(e) {
   const setLoading = on => { if (btn) { btn.disabled = on; if (on) btn.textContent = '⏳ Verificando…'; } };
   unlockedSnapshot = null;
   // Con sincronización activa: traer primero la versión más reciente de la nube
-  if (typeof cloudBeforeUnlock === 'function' && typeof Cloud !== 'undefined' && Cloud.user) {
+  // (sin esperar más de unos segundos: si la red está lenta se abre con la copia local)
+  if (typeof cloudWaitBeforeUnlock === 'function' && typeof Cloud !== 'undefined' && Cloud.client) {
     setLoading(true);
-    await cloudBeforeUnlock();
+    await cloudWaitBeforeUnlock();
   }
   const vault = readVault();
   const legacy = readLegacy();
