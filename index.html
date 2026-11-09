@@ -15,8 +15,40 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="styles.css">
+<style>
+  /* Pantalla de carga: se ve desde el primer instante, antes de que termine de cargar la app. */
+  #bootSplash { position: fixed; inset: 0; z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+    background: #f8fafc; color: #64748b; font: 600 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    transition: opacity .3s ease; }
+  [data-theme="dark"] #bootSplash { background: #06111e; color: #94a3b8; }
+  #bootSplash.hide { opacity: 0; pointer-events: none; }
+  #bootSplash img { width: 84px; height: 84px; border-radius: 20px; box-shadow: 0 8px 24px rgba(0,184,124,.25); animation: bootPulse 1.6s ease-in-out infinite; }
+  #bootSplash .boot-spin { width: 26px; height: 26px; border: 3px solid rgba(0,184,124,.2); border-top-color: #00b87c; border-radius: 50%; animation: bootSpin .8s linear infinite; }
+  @keyframes bootSpin { to { transform: rotate(360deg); } }
+  @keyframes bootPulse { 50% { transform: scale(.94); } }
+  @media (prefers-reduced-motion: reduce) { #bootSplash img, #bootSplash .boot-spin { animation-duration: 3s; } }
+</style>
+<script>
+  // Aplicar el tema guardado desde el inicio, para que la pantalla de carga no parpadee en blanco.
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem('theme_pref'); } catch (e) {}
+    if (t !== 'dark' && t !== 'light') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 </head>
 <body>
+
+<div id="bootSplash" role="status" aria-live="polite">
+  <img src="icon-192.png" alt="">
+  <div class="boot-spin" aria-hidden="true"></div>
+  <div id="bootSplashText">Cargando Budget Control…</div>
+</div>
+<script>
+  // Si tarda, avisar que sigue trabajando.
+  setTimeout(function () { var t = document.getElementById('bootSplashText'); if (t) t.textContent = 'Sigue cargando… la señal está lenta'; }, 5000);
+</script>
 
 <div class="app-container" id="app"></div>
 <div class="toast-wrap" id="toastWrap" aria-live="polite"></div>

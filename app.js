@@ -3580,6 +3580,15 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 
 // Iniciar
 render();
+hideBootSplash();
+
+// Quitar la pantalla de carga en cuanto la app ya se dibujó
+function hideBootSplash() {
+  const el = document.getElementById('bootSplash');
+  if (!el) return;
+  el.classList.add('hide');
+  setTimeout(() => el.remove(), 350);
+}
 
 // ==========================================
 // iPhone: mantener la barra inferior pegada abajo
