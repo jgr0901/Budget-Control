@@ -23,8 +23,16 @@ const Cloud = {
   busy: false,
   pending: false,
   timer: null,
-  ready: Promise.resolve()
+  ready: Promise.resolve(),
+  init: Promise.resolve(), // arranque (sesión de la nube + descarga inicial)
+  pull: null,              // descarga en curso antes de desbloquear (se comparte)
+  pullClosed: false,       // ya se dejó de esperar: no tocar la copia local
+  started: false           // la sincronización de esta sesión ya arrancó
 };
+
+// Al desbloquear se espera a la nube como máximo este tiempo. Si la red está lenta, se abre
+// con la copia de este dispositivo y los cambios de la nube se combinan justo después.
+const CLOUD_UNLOCK_WAIT = 4000;
 
 function cloudConfigured() {
   const c = window.BC_CLOUD || {};
@@ -196,7 +204,10 @@ async function cloudInit() {
     const { data } = await Cloud.client.auth.getSession();
     Cloud.user = data && data.session ? data.session.user : null;
     Cloud.client.auth.onAuthStateChange((_ev, s) => { Cloud.user = s ? s.user : null; });
-    if (Cloud.user) {
+    if (Cloud.user && isAuthenticated) {
+      // La app se desbloqueó antes de que la nube estuviera lista: arrancar la sincronización ahora.
+      if (!Cloud.started) { cloudAfterUnlock(unlockedSnapshot); cloudRefreshUi(); }
+    } else if (Cloud.user) {
       const changed = await cloudBeforeUnlock();
       const inp = $('lockPassInput');
       if (changed && !isAuthenticated && (!inp || !inp.value)) render();
@@ -210,11 +221,29 @@ async function cloudInit() {
   }
 }
 
+// Al tocar "Entrar": esperar la versión de la nube, pero nunca más de CLOUD_UNLOCK_WAIT.
+async function cloudWaitBeforeUnlock() {
+  if (!cloudConfigured()) return;
+  Cloud.pullClosed = false;
+  let timer;
+  const wait = Cloud.init.then(() => cloudBeforeUnlock());
+  const limit = new Promise(r => { timer = setTimeout(r, CLOUD_UNLOCK_WAIT); });
+  await Promise.race([wait, limit]);
+  clearTimeout(timer);
+  Cloud.pullClosed = true; // lo que llegue tarde se combina después de desbloquear
+}
+
 // Antes de desbloquear: traer la versión más reciente de la nube
-async function cloudBeforeUnlock() {
+// (si ya hay una descarga en curso, se reutiliza en vez de pedirla dos veces)
+function cloudBeforeUnlock() {
+  if (!Cloud.pull) Cloud.pull = cloudPullOnce().finally(() => { Cloud.pull = null; });
+  return Cloud.pull;
+}
+async function cloudPullOnce() {
   if (!Cloud.client || !Cloud.user || navigator.onLine === false) return false;
   try {
     const row = await cloudFetchRow(true);
+    if (Cloud.pullClosed || isAuthenticated) return false; // llegó tarde: lo combina la sincronización
     if (!row || !row.data || !row.data.ct) return false;
     const local = readVault();
     const remoteRev = num(row.rev);
@@ -237,6 +266,7 @@ async function cloudBeforeUnlock() {
 // Después de desbloquear: preparar la base de comparación y escuchar cambios
 function cloudAfterUnlock(unlockedJson) {
   if (!cloudActive()) return;
+  Cloud.started = true;
   const v = readVault() || {};
   Cloud.rev = num(v.rev);
   Cloud.forceUpload = !!v.forceUpload;
@@ -266,6 +296,8 @@ function cloudAfterUnlock(unlockedJson) {
 }
 
 function cloudOnLock() {
+  Cloud.started = false;
+  Cloud.pullClosed = false;
   cloudUnsubscribe();
   clearTimeout(Cloud.timer);
   Cloud.rev = 0;
@@ -631,4 +663,4 @@ window.addEventListener('offline', () => { if (cloudActive()) cloudSetStatus('of
 document.addEventListener('visibilitychange', () => { if (!document.hidden) cloudSync(); });
 setInterval(() => { if (cloudActive() && !document.hidden) cloudSync(); }, 60000);
 
-cloudInit();
+Cloud.init = cloudInit();
