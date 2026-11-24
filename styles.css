@@ -1204,6 +1204,7 @@ body {
   left: 0;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   background: var(--modal-overlay);
   backdrop-filter: blur(5px);
   display: flex;
@@ -1232,16 +1233,20 @@ body {
   max-width: 500px;
   border-radius: 26px 26px 0 0;
   padding: 26px 22px 32px;
+  /* Deja espacio para la barra de inicio del iPhone: los botones no quedan pegados abajo */
+  padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
   box-shadow: var(--shadow-lg);
   border: 1px solid var(--card-border);
   transform: translateY(30px);
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   max-height: 90vh;
+  max-height: 90dvh;
   overflow-y: auto;
 }
 
 @media (min-width: 600px) {
   .modal-content {
+    padding-bottom: 32px;
     border-radius: 26px;
     transform: scale(0.95);
   }
