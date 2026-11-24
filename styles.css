@@ -1446,6 +1446,7 @@ body {
 }
 .mini-btn:hover { border-color: var(--primary); color: var(--primary); }
 .mini-btn.danger:hover { border-color: var(--expense); color: var(--expense); }
+.sell-all-btn { margin-top: 8px; color: var(--primary); border-color: var(--primary); background: var(--primary-light); }
 
 .history-table {
   width: 100%;

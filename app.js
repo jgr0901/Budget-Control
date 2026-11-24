@@ -2659,7 +2659,7 @@ function openSellModal(id) {
   $('sellStockId').value = id;
   $('sellModalTitle').textContent = `− Vender ${s.t}`;
   $('sellShares').value = '';
-  $('sellShares').max = q;
+  $('sellShares').max = sellAllValue(q);
   $('sellMaxHint').textContent = `Tienes ${fmtQty(q)} títulos · Promedio ${fmtCur(stockAvg(s), s.c)}`;
   $('sellPriceLabel').textContent = `Precio de venta (${s.c})`;
   $('sellPrice').value = num(s.p) || '';
@@ -2667,13 +2667,22 @@ function openSellModal(id) {
   $('sellToLiquid').checked = true;
   openModal('sellModal', 'sellShares');
 }
+// Cantidad total redondeada a 6 decimales para evitar residuos de punto flotante (ej. 0.35290000000000005)
+const sellAllValue = q => +num(q).toFixed(6);
+function fillSellAll() {
+  const s = S.stocks.find(x => x.id === $('sellStockId').value);
+  if (!s) return;
+  $('sellShares').value = sellAllValue(stockQty(s));
+}
 function handleSaveSell(e) {
   e.preventDefault();
   const s = S.stocks.find(x => x.id === $('sellStockId').value);
   if (!s) return;
-  const q = parseFloat($('sellShares').value);
+  let q = parseFloat($('sellShares').value);
   const price = parseFloat($('sellPrice').value);
   const have = stockQty(s);
+  // Si la cantidad coincide con todo lo que tienes, vender exactamente todo (sin residuos)
+  if (Math.abs(q - have) < 1e-6) q = have;
   if (isNaN(q) || q <= 0 || isNaN(price) || price <= 0) return;
   if (q > have + 1e-9) { toast(`⚠️ Solo tienes ${fmtQty(have)} títulos.`); return; }
   const avg = stockAvg(s);
