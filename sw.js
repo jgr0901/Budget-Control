@@ -1,5 +1,5 @@
 // Service worker: permite usar la app sin internet y que abra rápido aunque la señal sea mala.
-const CACHE = 'budget-control-v9';
+const CACHE = 'budget-control-v10';
 const ASSETS = [
   './',
   './index.html',
